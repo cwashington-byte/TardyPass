@@ -42,10 +42,7 @@ class AppContainer(app: Application) {
         hostedDomain = SCHOOL_EMAIL_DOMAIN
     )
 
-    val sync = FirestoreSync(
-        studentDao = db.studentDao(),
-        schoolId = { currentSchoolId }
-    )
+    val sync = FirestoreSync(schoolId = { currentSchoolId })
 
     val students = StudentRepository(db.studentDao(), sync)
 

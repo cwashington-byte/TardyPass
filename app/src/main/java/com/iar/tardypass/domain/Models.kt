@@ -25,6 +25,8 @@ data class Student(
 
 data class Pass(
     val id: Long = 0,
+    /** Firestore document id when this pass came from the cloud; null if local-only. */
+    val remoteId: String? = null,
     val studentId: String,
     val studentFirstName: String,
     val studentLastName: String,

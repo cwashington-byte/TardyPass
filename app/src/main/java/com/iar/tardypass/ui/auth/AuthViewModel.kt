@@ -54,6 +54,11 @@ class AuthViewModel(
         }
     }
 
+    /** Re-subscribe after fixing permissions server-side, without restarting the app. */
+    fun retrySync() {
+        sync.retryRosterListener()
+    }
+
     fun signOut() {
         auth.signOut()
         sync.stopRosterListener()

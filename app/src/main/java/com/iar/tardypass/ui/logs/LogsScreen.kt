@@ -43,6 +43,7 @@ import java.util.Locale
 fun LogsScreen(vm: LogsViewModel) {
     val logs by vm.logs.collectAsState()
     val todayOnly by vm.todayOnly.collectAsState()
+    val logScope by vm.scope.collectAsState()
     val total by vm.totalCount.collectAsState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -84,6 +85,16 @@ fun LogsScreen(vm: LogsViewModel) {
             FilterChip(selected = todayOnly, onClick = { vm.todayOnly.value = true }, label = { Text("Today") })
             FilterChip(selected = !todayOnly, onClick = { vm.todayOnly.value = false }, label = { Text("All") })
             Spacer(Modifier.weight(1f))
+            if (vm.syncAvailable) {
+                FilterChip(
+                    selected = logScope == LogScope.SCHOOL,
+                    onClick = {
+                        vm.scope.value =
+                            if (logScope == LogScope.SCHOOL) LogScope.DEVICE else LogScope.SCHOOL
+                    },
+                    label = { Text(if (logScope == LogScope.SCHOOL) "All devices" else "This device") }
+                )
+            }
             TextButton(onClick = {
                 val date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
                 exportLauncher.launch("tardy_export_$date.csv")
@@ -103,7 +114,7 @@ fun LogsScreen(vm: LogsViewModel) {
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            items(logs, key = { it.id }) { p ->
+            items(logs, key = { it.remoteId ?: "local-${it.id}" }) { p ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -119,7 +130,8 @@ fun LogsScreen(vm: LogsViewModel) {
                                     append(SimpleDateFormat("MM/dd hh:mm a", Locale.US).format(Date(p.timestampMillis)))
                                     if (p.period.isNotBlank()) append(" · ${p.period}")
                                     p.reason?.let { append(" · $it") }
-                                    p.staffInitials?.let { append(" · $it") }
+                                    // Prefer the verified account name over typed initials.
+                                    (p.staffName ?: p.staffInitials)?.let { append(" · $it") }
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)

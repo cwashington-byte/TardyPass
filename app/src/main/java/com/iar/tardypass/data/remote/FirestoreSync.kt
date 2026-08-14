@@ -4,8 +4,11 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.MetadataChanges
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import com.iar.tardypass.BuildConfig
-import com.iar.tardypass.data.local.StudentDao
 import com.iar.tardypass.data.local.StudentEntity
 import com.iar.tardypass.domain.Pass
 import com.iar.tardypass.domain.ScheduleEntry
@@ -35,7 +38,6 @@ data class SyncStatus(
  * reconnect — the hallway workflow never depends on connectivity.
  */
 class FirestoreSync(
-    private val studentDao: StudentDao,
     private val schoolId: () -> String
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -92,6 +94,54 @@ class FirestoreSync(
         return true
     }
 
+    /**
+     * Live view of passes from every device, newest first. Bounded by [limit] and
+     * only collected while the Logs screen asks for it — an unbounded listener on
+     * this collection is the one thing that would blow past the free tier.
+     */
+    fun observeAllPasses(limit: Long = 200): Flow<List<Pass>> = callbackFlow {
+        val school = schoolDoc()
+        if (school == null) {
+            trySend(emptyList())
+            close()
+            return@callbackFlow
+        }
+        val registration = school.collection("passes")
+            .orderBy("localCreatedAt", Query.Direction.DESCENDING)
+            .limit(limit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    _status.value = _status.value.copy(lastError = error.message)
+                    return@addSnapshotListener
+                }
+                trySend(snapshot?.documents?.map { it.toPass() } ?: emptyList())
+            }
+        awaitClose { registration.remove() }
+    }
+
+    private fun com.google.firebase.firestore.DocumentSnapshot.toPass() = Pass(
+        id = 0,
+        remoteId = id,
+        studentId = getString("studentId") ?: "",
+        studentFirstName = getString("studentFirstName") ?: "",
+        studentLastName = getString("studentLastName") ?: "",
+        // localCreatedAt is the device's own clock — the real hallway time.
+        // Fall back to the server stamp if an older doc predates that field.
+        timestampMillis = getLong("localCreatedAt")
+            ?: getTimestamp("createdAt")?.toDate()?.time
+            ?: 0L,
+        period = getString("period") ?: "",
+        course = getString("course") ?: "",
+        room = getString("room") ?: "",
+        reason = getString("reason"),
+        staffInitials = getString("staffInitials"),
+        staffUid = getString("staffUid"),
+        staffName = getString("staffName"),
+        excused = getBoolean("excused") ?: false,
+        printDriver = getString("printDriver") ?: "",
+        printConfirmed = getBoolean("printConfirmed") ?: false
+    )
+
     // ---- Roster -------------------------------------------------------------
 
     /** Pushes an imported roster to Firestore so sibling devices pick it up. */
@@ -140,12 +190,26 @@ class FirestoreSync(
         rosterListener = school.collection("students")
             .addSnapshotListener(MetadataChanges.EXCLUDE) { snapshot, error ->
                 if (error != null) {
+                    // A listen error (notably PERMISSION_DENIED) kills the listener
+                    // for good. Drop the handle so a later retry can re-subscribe
+                    // instead of being blocked by the "already listening" guard.
+                    rosterListener?.remove()
+                    rosterListener = null
                     _status.value = _status.value.copy(lastError = error.message, rosterListening = false)
                     onError(error.message ?: "Roster sync error")
                     return@addSnapshotListener
                 }
-                if (snapshot == null || snapshot.isEmpty) return@addSnapshotListener
                 val now = System.currentTimeMillis()
+                // An empty collection is a healthy state (no roster imported yet),
+                // so report the connection as live before bailing out of the upsert.
+                if (snapshot == null || snapshot.isEmpty) {
+                    _status.value = _status.value.copy(
+                        rosterListening = true,
+                        lastRosterSyncMillis = now,
+                        lastError = null
+                    )
+                    return@addSnapshotListener
+                }
                 val entities = snapshot.documents.mapNotNull { doc ->
                     val first = doc.getString("firstName") ?: return@mapNotNull null
                     val last = doc.getString("lastName") ?: return@mapNotNull null
@@ -173,14 +237,19 @@ class FirestoreSync(
                     pendingWrites = snapshot.metadata.hasPendingWrites(),
                     lastError = null
                 )
-                pendingRosterUpsert = entities
                 onRosterSnapshot?.invoke(entities)
             }
     }
 
     /** Set by the repository layer, which owns the coroutine scope for DB writes. */
     var onRosterSnapshot: ((List<StudentEntity>) -> Unit)? = null
-    private var pendingRosterUpsert: List<StudentEntity> = emptyList()
+
+    /** Re-subscribes after a failure (e.g. permissions fixed server-side). */
+    fun retryRosterListener() {
+        stopRosterListener()
+        _status.value = _status.value.copy(lastError = null)
+        startRosterListener()
+    }
 
     fun stopRosterListener() {
         rosterListener?.remove()

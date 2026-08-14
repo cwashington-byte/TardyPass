@@ -96,7 +96,10 @@ fun AccountCard(vm: AuthViewModel) {
                 sync.lastError?.let {
                     Text("Sync error: $it", style = MaterialTheme.typography.bodySmall, color = Red600)
                 }
-                OutlinedButton(onClick = vm::signOut) { Text("Sign out") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = vm::retrySync) { Text("Retry sync") }
+                    OutlinedButton(onClick = vm::signOut) { Text("Sign out") }
+                }
             }
 
             state.message?.let {

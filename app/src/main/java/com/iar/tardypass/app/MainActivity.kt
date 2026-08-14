@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 container.students, container.passes, container.settings,
                 container.printer, container.auth, container.sync
             ) as T
-            LogsViewModel::class.java -> LogsViewModel(container.passes) as T
+            LogsViewModel::class.java -> LogsViewModel(container.passes, container.sync) as T
             SettingsViewModel::class.java -> SettingsViewModel(container.settings, container.printer) as T
             ImportViewModel::class.java ->
                 ImportViewModel(container.students, container.pendingSharedCsv) as T
