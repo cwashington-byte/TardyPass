@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 /** School's Google Workspace domain; blank disables the client-side check. */
-private const val SCHOOL_EMAIL_DOMAIN = ""
+private const val SCHOOL_EMAIL_DOMAIN = "invictusofrichmond.org"
 
 /** Manual DI — the whole graph is ~10 objects; Hilt isn't worth the startup cost here. */
 class AppContainer(app: Application) {
