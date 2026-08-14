@@ -51,7 +51,7 @@ class AppContainer(app: Application) {
 
     /** Cached so Firestore paths don't need a suspend call on every access. */
     @Volatile
-    private var currentSchoolId: String = "default"
+    private var currentSchoolId: String = com.iar.tardypass.data.repo.DEFAULT_SCHOOL_ID
 
     val pendingSharedCsv = MutableStateFlow<String?>(null)
 

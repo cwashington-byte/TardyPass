@@ -12,6 +12,12 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
+/**
+ * Firestore path segment for this site. A real name (not "default") so adding a
+ * second school later is a config change rather than a data migration.
+ */
+const val DEFAULT_SCHOOL_ID = "invictus"
+
 data class AppSettings(
     val printerDriverId: String = "auto",       // auto | vendor | serial | bluetooth | rawbt
     val encoding: PrinterEncoding = PrinterEncoding.CP437,
@@ -25,7 +31,7 @@ data class AppSettings(
     val staffInitials: String = "",             // remembered across passes (PWA re-typed every time)
     val serialDevicePath: String = "",          // filled by Phase 0 discovery / probing
     val bluetoothAddress: String = "",
-    val schoolId: String = "default"            // multi-school later without migration
+    val schoolId: String = DEFAULT_SCHOOL_ID    // multi-school later without migration
 )
 
 class SettingsRepository(private val context: Context) {
@@ -61,7 +67,7 @@ class SettingsRepository(private val context: Context) {
             staffInitials = p[Keys.STAFF_INITIALS] ?: "",
             serialDevicePath = p[Keys.SERIAL_PATH] ?: "",
             bluetoothAddress = p[Keys.BT_ADDRESS] ?: "",
-            schoolId = p[Keys.SCHOOL_ID] ?: "default"
+            schoolId = p[Keys.SCHOOL_ID] ?: DEFAULT_SCHOOL_ID
         )
     }
 
