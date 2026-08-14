@@ -27,7 +27,10 @@ import androidx.compose.ui.unit.dp
 import com.iar.tardypass.printing.PrinterEncoding
 
 @Composable
-fun SettingsScreen(vm: SettingsViewModel) {
+fun SettingsScreen(
+    vm: SettingsViewModel,
+    authVm: com.iar.tardypass.ui.auth.AuthViewModel? = null
+) {
     val settings by vm.settings.collectAsState()
     val availability by vm.availability.collectAsState()
     val testResult by vm.testResult.collectAsState()
@@ -41,6 +44,8 @@ fun SettingsScreen(vm: SettingsViewModel) {
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        authVm?.let { com.iar.tardypass.ui.auth.AccountCard(it) }
+
         SectionCard("Printer") {
             vm.driverChoices.forEach { (id, name) ->
                 Row(

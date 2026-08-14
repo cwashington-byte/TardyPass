@@ -1,0 +1,65 @@
+rules_version = '2';
+
+// TardyPass — student PII lives here (names, grade, schedule), so the posture is
+// default-deny with explicit membership gating. Being signed in with a Google
+// account is NOT enough: an admin must create a member doc for that uid. This is
+// what keeps a student's own Workspace account from reading the roster.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function memberPath(schoolId) {
+      return /databases/$(database)/documents/schools/$(schoolId)/members/$(request.auth.uid);
+    }
+
+    function isMember(schoolId) {
+      return isSignedIn() && exists(memberPath(schoolId));
+    }
+
+    function isAdmin(schoolId) {
+      return isMember(schoolId) && get(memberPath(schoolId)).data.role == 'admin';
+    }
+
+    match /schools/{schoolId} {
+      // School doc itself: readable by members, writable only by admins.
+      allow read: if isMember(schoolId);
+      allow write: if isAdmin(schoolId);
+
+      match /members/{uid} {
+        allow read: if isMember(schoolId);
+        allow write: if isAdmin(schoolId);
+      }
+
+      match /students/{studentId} {
+        allow read: if isMember(schoolId);
+        // Roster changes come from CSV import (admin) or the SIS sync function
+        // (service account, which bypasses rules).
+        allow create, update: if isAdmin(schoolId);
+        allow delete: if isAdmin(schoolId);
+      }
+
+      match /passes/{passId} {
+        allow read: if isMember(schoolId);
+
+        // Staff may only create passes attributed to themselves — this is what
+        // makes the audit trail meaningful.
+        allow create: if isMember(schoolId)
+                      && request.resource.data.staffUid == request.auth.uid
+                      && request.resource.data.studentId is string
+                      && request.resource.data.studentId.size() > 0;
+
+        // Passes are an audit record: no edits, and only admins may remove them.
+        allow update: if false;
+        allow delete: if isAdmin(schoolId);
+      }
+    }
+
+    // Anything not matched above is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

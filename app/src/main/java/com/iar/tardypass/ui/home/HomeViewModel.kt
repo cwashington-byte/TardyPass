@@ -51,8 +51,12 @@ class HomeViewModel(
     private val students: StudentRepository,
     private val passes: PassRepository,
     private val settings: SettingsRepository,
-    private val printer: PrinterManager
+    private val printer: PrinterManager,
+    private val auth: com.iar.tardypass.data.repo.AuthRepository? = null,
+    private val sync: com.iar.tardypass.data.remote.FirestoreSync? = null
 ) : ViewModel() {
+
+    val currentStaff = auth?.currentUser
 
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state
@@ -165,22 +169,26 @@ class HomeViewModel(
 
             if (result.succeeded) {
                 if (cfg.enableLogging) {
-                    passes.record(
-                        Pass(
-                            studentId = form.student.id,
-                            studentFirstName = form.student.firstName,
-                            studentLastName = form.student.lastName,
-                            timestampMillis = now.time,
-                            period = form.period,
-                            course = entry?.course ?: "",
-                            room = entry?.room ?: "",
-                            reason = reason,
-                            staffInitials = st.initials.trim().ifEmpty { null },
-                            excused = excused,
-                            printDriver = driverId,
-                            printConfirmed = result.confirmed
-                        )
+                    val staff = auth?.currentUser?.value
+                    val pass = Pass(
+                        studentId = form.student.id,
+                        studentFirstName = form.student.firstName,
+                        studentLastName = form.student.lastName,
+                        timestampMillis = now.time,
+                        period = form.period,
+                        course = entry?.course ?: "",
+                        room = entry?.room ?: "",
+                        reason = reason,
+                        staffInitials = st.initials.trim().ifEmpty { null },
+                        staffUid = staff?.uid,
+                        staffName = staff?.displayName,
+                        excused = excused,
+                        printDriver = driverId,
+                        printConfirmed = result.confirmed
                     )
+                    passes.record(pass)
+                    // Queues into Firestore's offline cache; flushes when online.
+                    if (staff != null) sync?.recordPass(pass, staff.uid, staff.displayName)
                 }
                 val confirmNote = if (result.confirmed) "printed" else "sent to printer"
                 _state.value = _state.value.copy(

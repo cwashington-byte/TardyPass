@@ -1,6 +1,12 @@
 .gradle/
 build/
 local.properties
+
+# Signing material and Firebase config — never commit
+keystore.properties
+*.jks
+*.keystore
+google-services.json
 .idea/
 *.iml
 captures/

@@ -11,7 +11,10 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 
-class StudentRepository(private val dao: StudentDao) {
+class StudentRepository(
+    private val dao: StudentDao,
+    private val sync: com.iar.tardypass.data.remote.FirestoreSync? = null
+) {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val scheduleSerializer = MapSerializer(String.serializer(), ScheduleEntry.serializer())
@@ -41,7 +44,9 @@ class StudentRepository(private val dao: StudentDao) {
     data class ImportOutcome(
         val imported: Int,
         val errors: List<com.iar.tardypass.data.csv.RowError>,
-        val deactivated: Boolean
+        val deactivated: Boolean,
+        val syncedToCloud: Boolean = false,
+        val syncError: String? = null
     )
 
     /** Non-destructive merge: upsert by student number. fullReplace deactivates absent students. */
@@ -51,7 +56,17 @@ class StudentRepository(private val dao: StudentDao) {
         val now = System.currentTimeMillis()
         dao.upsertAll(result.students.map { it.toEntity(now) })
         if (fullReplace) dao.deactivateMissing(result.students.map { it.id })
-        return ImportOutcome(result.students.size, result.errors, fullReplace)
+
+        // Local import always succeeds; cloud push is best-effort so a device
+        // with no network still gets a working roster.
+        var synced = false
+        var syncError: String? = null
+        if (sync?.isAvailable == true) {
+            sync.pushRoster(result.students)
+                .onSuccess { synced = true }
+                .onFailure { syncError = it.message }
+        }
+        return ImportOutcome(result.students.size, result.errors, fullReplace, synced, syncError)
     }
 
     /** Parse-only pass for the import preview screen. */

@@ -30,6 +30,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.iar.tardypass.ui.auth.AuthViewModel
 import com.iar.tardypass.ui.home.HomeScreen
 import com.iar.tardypass.ui.home.HomeViewModel
 import com.iar.tardypass.ui.import_.ImportScreen
@@ -50,12 +51,15 @@ class MainActivity : ComponentActivity() {
     private val vmFactory = object : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = when (modelClass) {
-            HomeViewModel::class.java ->
-                HomeViewModel(container.students, container.passes, container.settings, container.printer) as T
+            HomeViewModel::class.java -> HomeViewModel(
+                container.students, container.passes, container.settings,
+                container.printer, container.auth, container.sync
+            ) as T
             LogsViewModel::class.java -> LogsViewModel(container.passes) as T
             SettingsViewModel::class.java -> SettingsViewModel(container.settings, container.printer) as T
             ImportViewModel::class.java ->
                 ImportViewModel(container.students, container.pendingSharedCsv) as T
+            AuthViewModel::class.java -> AuthViewModel(container.auth, container.sync) as T
             else -> throw IllegalArgumentException("Unknown ViewModel $modelClass")
         }
     }
@@ -145,7 +149,12 @@ class MainActivity : ComponentActivity() {
                 composable("home") { HomeScreen(viewModel(factory = vmFactory)) }
                 composable("logs") { LogsScreen(viewModel(factory = vmFactory)) }
                 composable("import") { ImportScreen(viewModel(factory = vmFactory)) }
-                composable("settings") { SettingsScreen(viewModel(factory = vmFactory)) }
+                composable("settings") {
+                    SettingsScreen(
+                        vm = viewModel(factory = vmFactory),
+                        authVm = viewModel(factory = vmFactory)
+                    )
+                }
             }
         }
     }
