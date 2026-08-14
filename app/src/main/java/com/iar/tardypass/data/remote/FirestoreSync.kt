@@ -95,12 +95,20 @@ class FirestoreSync(
      * lands in Firestore's local cache immediately and the UI must not block on
      * the network. Returns false only if sync isn't configured at all.
      */
-    fun recordPass(pass: Pass, staffUid: String?, staffName: String?): Boolean {
+    fun recordPass(
+        pass: Pass,
+        staffUid: String?,
+        staffName: String?,
+        studentGrade: String? = null
+    ): Boolean {
         val doc = schoolDoc()?.collection("passes")?.document() ?: return false
         val data = hashMapOf(
             "studentId" to pass.studentId,
             "studentFirstName" to pass.studentFirstName,
             "studentLastName" to pass.studentLastName,
+            // Denormalized so the attendance dashboard doesn't have to join
+            // against the roster for every row.
+            "grade" to studentGrade,
             // Server time for ordering across devices with drifting clocks...
             "createdAt" to FieldValue.serverTimestamp(),
             // ...and the device's own clock, which is the real hallway time and

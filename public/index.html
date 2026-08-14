@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tardy Pass — Attendance</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --border: #e3e6ea;
+    --text: #16191d;
+    --muted: #666e79;
+    --blue: #2563eb;
+    --green: #16a34a;
+    --red: #dc2626;
+    --amber: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 15px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  .spacer { flex: 1; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+
+  /* Live indicator: green dot pulses while the snapshot listener is attached. */
+  .live { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+  .dot.stale { background: var(--amber); animation: none; }
+  .dot.off { background: var(--red); animation: none; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+  .dot:not(.stale):not(.off) { animation: pulse 2s ease-in-out infinite; }
+
+  main { padding: 18px 20px 60px; max-width: 1200px; margin: 0 auto; }
+
+  .controls {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    margin-bottom: 14px;
+  }
+  input[type="date"], input[type="search"], select, button {
+    font: inherit; padding: 8px 11px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); color: var(--text);
+  }
+  input[type="search"] { min-width: 230px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .stats { display: flex; gap: 22px; margin-bottom: 14px; flex-wrap: wrap; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; min-width: 108px; }
+  .stat .n { font-size: 24px; font-weight: 680; line-height: 1.1; }
+  .stat .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--surface);
+          border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+       background: #fafbfc; position: sticky; top: 62px; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: #f8fafc; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em;
+         padding: 2px 7px; border-radius: 5px; }
+  .tag.unex { background: #fee2e2; color: var(--red); }
+  .tag.ex { background: #dcfce7; color: var(--green); }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+           padding: 26px; text-align: center; }
+  .panel h2 { margin: 0 0 8px; font-size: 18px; }
+  .empty { padding: 34px; text-align: center; color: var(--muted); }
+  .err { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+           background: #16191d; color: #fff; padding: 9px 16px; border-radius: 8px;
+           font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #toast.show { opacity: 1; }
+
+  @media print {
+    header .controls, .controls, button, .live { display: none !important; }
+    body { background: #fff; }
+    th { position: static; }
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1216; --surface:#171b21; --border:#272d36; --text:#e8eaed; --muted:#9aa4b2; }
+    th { background: #1c212a; }
+    tbody tr:hover { background: #1c212a; }
+    .tag.unex { background: #451a1a; }
+    .tag.ex { background: #14321f; }
+    .err { background: #3b1414; border-color: #7f1d1d; color: #fca5a5; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tardy Pass — Attendance</h1>
+  <span class="live" id="live" hidden><span class="dot" id="dot"></span><span id="liveText">Live</span></span>
+  <div class="spacer"></div>
+  <span class="small muted" id="who"></span>
+  <button id="signOut" hidden>Sign out</button>
+</header>
+
+<main>
+  <div id="signinPanel" class="panel" hidden>
+    <h2>Attendance dashboard</h2>
+    <p class="muted">Sign in with your school Google account to see today's passes.</p>
+    <button class="primary" id="signIn">Sign in with Google</button>
+    <p class="small muted" id="signinErr"></p>
+  </div>
+
+  <div id="noAccess" class="panel err" hidden>
+    <h2>No access yet</h2>
+    <p>Your account is signed in but hasn't been given access to this school's records.
+       Ask an administrator to add you in the Tardy Pass app under
+       <strong>Settings → Administration → Manage staff</strong>.</p>
+    <p class="small" id="noAccessWho"></p>
+  </div>
+
+  <div id="app" hidden>
+    <div class="controls">
+      <input type="date" id="date" />
+      <button id="today">Today</button>
+      <select id="status">
+        <option value="unexcused">Unexcused only</option>
+        <option value="all">All passes</option>
+        <option value="excused">Excused only</option>
+      </select>
+      <input type="search" id="q" placeholder="Filter by name, ID, staff…" />
+      <div class="spacer"></div>
+      <button id="copy">Copy for spreadsheet</button>
+      <button id="csv">Download CSV</button>
+      <button onclick="window.print()">Print</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="n" id="cUnex">0</div><div class="l">Unexcused</div></div>
+      <div class="stat"><div class="n" id="cEx">0</div><div class="l">Excused</div></div>
+      <div class="stat"><div class="n" id="cTotal">0</div><div class="l">Total</div></div>
+      <div class="stat"><div class="n" id="cStudents">0</div><div class="l">Students</div></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th><th>Student</th><th>ID</th><th>Gr</th>
+          <th>Period</th><th>Reason</th><th>Status</th><th>Issued by</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="empty" id="empty" hidden>No passes match this view.</div>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+import {
+  getFirestore, collection, query, where, orderBy, limit, onSnapshot, doc, getDoc
+} from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+// Firebase web config is public by design — it identifies the project, it does
+// not grant access. All authorization is enforced by Firestore security rules,
+// which require a members/{uid} document for this school.
+const firebaseConfig = {
+  apiKey: "AIzaSyBtpFsoAoaCcxUZz9OT7OEuk6BYf0ZFvpo",
+  authDomain: "tardypass-de47d.firebaseapp.com",
+  projectId: "tardypass-de47d",
+  storageBucket: "tardypass-de47d.firebasestorage.app",
+  messagingSenderId: "405335868014",
+  appId: "1:405335868014:web:33f584da5993f6cd10dc7f"
+};
+
+const SCHOOL_ID = "invictus";
+const SCHOOL_DOMAIN = "invictusofrichmond.org";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const $ = (id) => document.getElementById(id);
+let unsubscribe = null;
+let rowsCache = [];
+
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+function ymd(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function fmtTime(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+// ---- auth ----------------------------------------------------------------
+
+$("signIn").onclick = async () => {
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ hd: SCHOOL_DOMAIN });
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (e) {
+    $("signinErr").textContent = e.code === "auth/popup-closed-by-user"
+      ? "" : `Sign-in failed: ${e.message}`;
+  }
+};
+
+$("signOut").onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, async (user) => {
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+
+  if (!user) {
+    $("signinPanel").hidden = false;
+    $("app").hidden = true;
+    $("noAccess").hidden = true;
+    $("signOut").hidden = true;
+    $("live").hidden = true;
+    $("who").textContent = "";
+    return;
+  }
+
+  $("who").textContent = user.email;
+  $("signOut").hidden = false;
+  $("signinPanel").hidden = true;
+
+  // Confirm membership before subscribing, so an unprovisioned user gets a
+  // useful message instead of a raw permission error.
+  let isMember = false;
+  try {
+    const snap = await getDoc(doc(db, "schools", SCHOOL_ID, "members", user.uid));
+    isMember = snap.exists();
+  } catch { isMember = false; }
+
+  if (!isMember) {
+    $("noAccess").hidden = false;
+    $("noAccessWho").textContent = `Signed in as ${user.email}`;
+    $("app").hidden = true;
+    return;
+  }
+
+  $("noAccess").hidden = true;
+  $("app").hidden = false;
+  subscribe();
+});
+
+// ---- live data -----------------------------------------------------------
+
+function subscribe() {
+  if (unsubscribe) unsubscribe();
+
+  const day = $("date").value ? new Date($("date").value + "T00:00:00") : new Date();
+  const start = new Date(day); start.setHours(0, 0, 0, 0);
+  const end = new Date(start); end.setDate(end.getDate() + 1);
+
+  $("live").hidden = false;
+  $("dot").className = "dot";
+  $("liveText").textContent = "Connecting…";
+
+  const q = query(
+    collection(db, "schools", SCHOOL_ID, "passes"),
+    where("localCreatedAt", ">=", start.getTime()),
+    where("localCreatedAt", "<", end.getTime()),
+    orderBy("localCreatedAt", "desc"),
+    limit(500)
+  );
+
+  unsubscribe = onSnapshot(q, (snap) => {
+    rowsCache = snap.docs.map((d) => {
+      const v = d.data();
+      return {
+        id: d.id,
+        t: v.localCreatedAt || 0,
+        first: v.studentFirstName || "",
+        last: v.studentLastName || "",
+        sid: v.studentId || "",
+        grade: v.grade || "",
+        period: v.period || "",
+        reason: v.reason || "",
+        excused: !!v.excused,
+        staff: v.staffName || v.staffInitials || ""
+      };
+    });
+    $("dot").className = "dot";
+    $("liveText").textContent = `Live · updated ${new Date().toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}`;
+    render();
+  }, (err) => {
+    $("dot").className = "dot off";
+    $("liveText").textContent = "Disconnected";
+    toast(`Error: ${err.message}`);
+  });
+}
+
+function filtered() {
+  const mode = $("status").value;
+  const needle = $("q").value.trim().toLowerCase();
+  return rowsCache.filter((r) => {
+    if (mode === "unexcused" && r.excused) return false;
+    if (mode === "excused" && !r.excused) return false;
+    if (!needle) return true;
+    return [r.first, r.last, r.sid, r.staff, r.reason, r.period]
+      .join(" ").toLowerCase().includes(needle);
+  });
+}
+
+function render() {
+  const list = filtered();
+  const tbody = $("rows");
+  tbody.innerHTML = "";
+
+  for (const r of list) {
+    const tr = document.createElement("tr");
+    const cells = [
+      ["num", fmtTime(r.t)],
+      ["", `${r.last}, ${r.first}`],
+      ["num", r.sid],
+      ["num", r.grade],
+      ["", r.period],
+      ["", r.reason],
+      ["tag", r.excused ? "EXCUSED" : "UNEXCUSED"],
+      ["", r.staff]
+    ];
+    for (const [cls, val] of cells) {
+      const td = document.createElement("td");
+      if (cls === "tag") {
+        const s = document.createElement("span");
+        s.className = "tag " + (r.excused ? "ex" : "unex");
+        s.textContent = val;
+        td.appendChild(s);
+      } else {
+        if (cls) td.className = cls;
+        td.textContent = val;
+      }
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+
+  $("empty").hidden = list.length > 0;
+  $("cUnex").textContent = rowsCache.filter((r) => !r.excused).length;
+  $("cEx").textContent = rowsCache.filter((r) => r.excused).length;
+  $("cTotal").textContent = rowsCache.length;
+  $("cStudents").textContent = new Set(rowsCache.map((r) => r.sid)).size;
+}
+
+// ---- clerk helpers -------------------------------------------------------
+
+function tsv() {
+  const head = ["Student_Number","Last_Name","First_Name","Date","Time","Period","Reason","Status","Issued_By"];
+  const lines = [head.join("\t")];
+  for (const r of filtered()) {
+    const d = new Date(r.t);
+    lines.push([
+      r.sid, r.last, r.first,
+      d.toLocaleDateString(), fmtTime(r.t),
+      r.period, r.reason, r.excused ? "Excused" : "Unexcused", r.staff
+    ].join("\t"));
+  }
+  return lines.join("\n");
+}
+
+$("copy").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(tsv());
+    toast(`Copied ${filtered().length} row(s) — paste into a spreadsheet`);
+  } catch {
+    toast("Clipboard blocked — use Download CSV instead");
+  }
+};
+
+$("csv").onclick = () => {
+  const csv = tsv().split("\n")
+    .map((line) => line.split("\t").map((c) => /[",]/.test(c) ? `"${c.replace(/"/g,'""')}"` : c).join(","))
+    .join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `tardies_${$("date").value || ymd(new Date())}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+$("date").value = ymd(new Date());
+$("date").onchange = subscribe;
+$("today").onclick = () => { $("date").value = ymd(new Date()); subscribe(); };
+$("status").onchange = render;
+$("q").oninput = render;
+
+// A page left open overnight would still be querying yesterday; re-subscribe
+// when the tab is refocused on a new day.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && $("date").value === ymd(new Date(Date.now() - 86400000))) {
+    $("date").value = ymd(new Date());
+    subscribe();
+  }
+});
+</script>
+</body>
+</html>

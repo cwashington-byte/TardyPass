@@ -188,7 +188,9 @@ class HomeViewModel(
                     )
                     passes.record(pass)
                     // Queues into Firestore's offline cache; flushes when online.
-                    if (staff != null) sync?.recordPass(pass, staff.uid, staff.displayName)
+                    if (staff != null) {
+                        sync?.recordPass(pass, staff.uid, staff.displayName, form.student.grade)
+                    }
                 }
                 val confirmNote = if (result.confirmed) "printed" else "sent to printer"
                 _state.value = _state.value.copy(

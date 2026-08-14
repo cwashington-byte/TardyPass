@@ -2,6 +2,9 @@
 build/
 local.properties
 
+# Firebase CLI deploy cache
+.firebase/
+
 # Signing material and Firebase config — never commit
 keystore.properties
 *.jks
