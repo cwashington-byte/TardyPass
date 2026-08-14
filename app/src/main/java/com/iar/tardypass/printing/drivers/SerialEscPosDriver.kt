@@ -33,9 +33,25 @@ class SerialEscPosDriver(
 
     fun resolvePath(): String? {
         configuredPath().takeIf { it.isNotBlank() }?.let { p ->
-            return p.takeIf { File(it).let { f -> f.exists() && f.canWrite() } }
+            return p.takeIf { canReallyOpen(it) }
         }
-        return candidatePaths.firstOrNull { File(it).let { f -> f.exists() && f.canWrite() } }
+        return candidatePaths.firstOrNull { canReallyOpen(it) }
+    }
+
+    /**
+     * canWrite() only reflects DAC bits, which lie under SELinux — on SENRAISE
+     * H10s /dev/ttyS1 is mode 666 yet open() is denied for untrusted apps.
+     * Actually opening the node is the only honest probe (harmless: opening a
+     * tty prints nothing).
+     */
+    private fun canReallyOpen(path: String): Boolean {
+        val f = File(path)
+        if (!f.exists()) return false
+        return try {
+            FileOutputStream(path).use { true }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     override suspend fun isAvailable(context: Context): Boolean = withContext(Dispatchers.IO) {

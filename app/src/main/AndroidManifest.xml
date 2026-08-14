@@ -5,6 +5,18 @@
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
+    <!--
+      Package visibility (API 30+): without these the vendor printer service is
+      invisible to resolveService/bindService and the RAWBT probe always fails.
+    -->
+    <queries>
+        <package android:name="recieptservice.com.recieptservice" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="rawbt" />
+        </intent>
+    </queries>
+
     <application
         android:name=".app.TardyPassApp"
         android:allowBackup="true"

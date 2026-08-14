@@ -16,12 +16,28 @@ sealed class ImportUiState {
     data class Error(val message: String) : ImportUiState()
 }
 
-class ImportViewModel(private val students: StudentRepository) : ViewModel() {
+class ImportViewModel(
+    private val students: StudentRepository,
+    private val sharedCsv: MutableStateFlow<String?>
+) : ViewModel() {
 
     private val _state = MutableStateFlow<ImportUiState>(ImportUiState.Idle)
     val state: StateFlow<ImportUiState> = _state
 
     val rosterCount = students.activeCount
+
+    init {
+        // Picks up a CSV shared into the app; consuming it clears the holder so
+        // rotating or revisiting the screen doesn't re-trigger the import.
+        viewModelScope.launch {
+            sharedCsv.collect { text ->
+                if (text != null) {
+                    sharedCsv.value = null
+                    preview(text)
+                }
+            }
+        }
+    }
 
     /** Parse CSV text (from file picker or share intent) into a preview. */
     fun preview(text: String) {

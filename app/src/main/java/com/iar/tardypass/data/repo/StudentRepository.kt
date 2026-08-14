@@ -29,8 +29,8 @@ class StudentRepository(private val dao: StudentDao) {
             dao.searchById(q, limit)
         } else {
             val fts = q.split(Regex("\\s+"))
-                .filter { it.isNotBlank() }
-                .joinToString(" ") { sanitizeFtsToken(it) + "*" }
+                .mapNotNull { sanitizeFtsToken(it) }
+                .joinToString(" ") { "$it*" }
             if (fts.isBlank()) emptyList() else dao.searchByName(fts, limit)
         }
         return entities.map { it.toDomain() }
@@ -57,8 +57,14 @@ class StudentRepository(private val dao: StudentDao) {
     /** Parse-only pass for the import preview screen. */
     fun preview(text: String): RosterImportResult = RosterCsv.parse(text)
 
-    private fun sanitizeFtsToken(t: String): String =
-        "\"" + t.replace("\"", "") + "\""
+    /**
+     * FTS MATCH tokens must be bare for the `*` prefix operator to apply —
+     * quoting makes it an exact-phrase match, so "gar*" would stop matching
+     * "Garcia". Strip everything that isn't a letter or digit (which also
+     * neutralizes FTS operators like - " ^ : ()).
+     */
+    private fun sanitizeFtsToken(t: String): String? =
+        t.replace(Regex("[^\\p{L}\\p{N}]"), "").takeIf { it.isNotBlank() }
 
     private fun StudentEntity.toDomain() = Student(
         id = id,
