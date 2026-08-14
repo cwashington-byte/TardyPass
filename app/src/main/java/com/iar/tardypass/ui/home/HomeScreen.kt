@@ -29,6 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -62,6 +65,16 @@ fun HomeScreen(vm: HomeViewModel) {
     val dismissKeyboard = {
         keyboard?.hide()
         focusManager.clearFocus()
+    }
+
+    // After a print the student is cleared, so hand the cursor straight back to
+    // search — the next action is always looking up another student.
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(state.focusSearchTick) {
+        if (state.focusSearchTick > 0) {
+            searchFocus.requestFocus()
+            keyboard?.show()
+        }
     }
 
     state.form?.let { form ->
@@ -126,7 +139,9 @@ fun HomeScreen(vm: HomeViewModel) {
             OutlinedTextField(
                 value = state.query,
                 onValueChange = vm::onQueryChange,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(searchFocus),
                 placeholder = { Text("Search name or student number…") },
                 singleLine = true
             )

@@ -62,7 +62,9 @@ data class HomeUiState(
     val staffChoices: List<Member> = emptyList(),
     val staffPickerOpen: Boolean = false,
     /** A print interrupted to ask who is issuing it; resumes once they choose. */
-    val pendingPrintExcused: Boolean? = null
+    val pendingPrintExcused: Boolean? = null,
+    /** Bumped after a print to send focus back to the search field for the next student. */
+    val focusSearchTick: Int = 0
 )
 
 /** Who is currently claiming passes on a shared printer. */
@@ -335,14 +337,19 @@ class HomeViewModel(
                     if (deviceMode) settings.touchSelectedStaff()
                 }
                 val confirmNote = if (result.confirmed) "printed" else "sent to printer"
+                // Close the finished student and put the cursor back in search —
+                // the next thing anyone does is look up another student.
                 _state.value = _state.value.copy(
                     printing = false,
                     query = "",
                     results = emptyList(),
+                    form = null,
+                    focusSearchTick = _state.value.focusSearchTick + 1,
                     banner = BannerMessage("Pass $confirmNote for ${form.student.fullName}")
                 )
                 queryFlow.value = ""
-                refreshFormCounts(form.student)
+                // No refreshFormCounts here: the form is closed, and re-selecting
+                // this student recomputes their counts from scratch anyway.
             } else {
                 val reasonText = (result as com.iar.tardypass.printing.PrintResult.Failed).reason
                 _state.value = _state.value.copy(
@@ -350,14 +357,6 @@ class HomeViewModel(
                     banner = BannerMessage("Print failed: $reasonText", isError = true)
                 )
             }
-        }
-    }
-
-    private fun refreshFormCounts(student: Student) {
-        viewModelScope.launch {
-            val count = passes.countForStudentSince(student.id, startOfSchoolYear())
-            val recent = passes.recentForStudent(student.id)
-            updateForm { it.copy(termPassCount = count, recentPasses = recent) }
         }
     }
 
