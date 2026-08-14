@@ -37,7 +37,10 @@ service cloud.firestore {
       }
 
       match /members/{uid} {
-        allow read: if isMember(schoolId);
+        // You can always read your own membership record, member or not —
+        // otherwise a newly invited user can't check whether they're already
+        // provisioned, and the invite claim below can never run.
+        allow read: if isMember(schoolId) || (isSignedIn() && request.auth.uid == uid);
         allow update, delete: if isAdmin(schoolId);
 
         // Admins provision anyone. A newly invited staff member provisions only

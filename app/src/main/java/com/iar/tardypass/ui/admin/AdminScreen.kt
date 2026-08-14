@@ -80,9 +80,10 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
         item(key = "invite") {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Invite staff", style = MaterialTheme.typography.titleMedium)
+                    Text("Grant access", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "They'll get access the first time they sign in with this address.",
+                        "No email is sent. Access is granted the moment they sign in " +
+                            "with this address — just tell them to open the app.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
@@ -117,7 +118,7 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
                         onClick = { vm.invite(email, role, schoolDomain); email = "" },
                         enabled = !busy && email.isNotBlank(),
                         modifier = Modifier.fillMaxWidth().height(50.dp)
-                    ) { Text("Send invite") }
+                    ) { Text("Grant access") }
                 }
             }
         }
@@ -140,7 +141,7 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
 
         if (invites.isNotEmpty()) {
             item(key = "pending-h") {
-                Text("Pending invites", style = MaterialTheme.typography.titleMedium)
+                Text("Waiting for first sign-in", style = MaterialTheme.typography.titleMedium)
             }
             items(invites, key = { "inv-${it.email}" }) { invite ->
                 Card(Modifier.fillMaxWidth()) {
@@ -151,7 +152,7 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
                         Column(Modifier.weight(1f)) {
                             Text(invite.email)
                             Text(
-                                "Invited as ${invite.role} · not signed in yet",
+                                "Approved as ${invite.role} · hasn't signed in yet",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )

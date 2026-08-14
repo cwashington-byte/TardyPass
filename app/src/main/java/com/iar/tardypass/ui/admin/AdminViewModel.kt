@@ -40,7 +40,7 @@ class AdminViewModel(
             message.value = "Staff must use an @$schoolDomain address"
             return
         }
-        run(successMsg = "Invited $clean") {
+        run(successMsg = "$clean can now sign in") {
             sync.inviteStaff(clean, role, currentUid)
         }
     }

@@ -63,9 +63,20 @@ class AuthViewModel(
         }
     }
 
-    /** Re-subscribe after fixing permissions server-side, without restarting the app. */
+    /**
+     * Re-subscribe after permissions change server-side, without restarting the
+     * app. Also retries the invite claim, so someone granted access after they
+     * first signed in can recover with one tap instead of signing out.
+     */
     fun retrySync() {
-        sync.retryRosterListener()
+        viewModelScope.launch {
+            auth.currentUser.value?.let { u ->
+                val claimed = sync.claimInviteIfPresent(u.uid, u.email, u.displayName)
+                if (claimed) _state.value = _state.value.copy(message = "Access granted")
+                sync.startMemberListener(u.uid)
+            }
+            sync.retryRosterListener()
+        }
     }
 
     fun signOut() {
