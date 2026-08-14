@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import com.iar.tardypass.BuildConfig
 import com.iar.tardypass.data.local.StudentEntity
+import com.iar.tardypass.domain.Invite
+import com.iar.tardypass.domain.Member
 import com.iar.tardypass.domain.Pass
 import com.iar.tardypass.domain.ScheduleEntry
 import com.iar.tardypass.domain.Student
@@ -170,6 +172,109 @@ class FirestoreSync(
         printDriver = getString("printDriver") ?: "",
         printConfirmed = getBoolean("printConfirmed") ?: false
     )
+
+    // ---- Staff administration ----------------------------------------------
+
+    fun observeMembers(): Flow<List<Member>> = callbackFlow {
+        val school = schoolDoc()
+        if (school == null) { trySend(emptyList()); close(); return@callbackFlow }
+        val reg = school.collection("members").addSnapshotListener { snap, err ->
+            if (err != null) {
+                _status.value = _status.value.copy(lastError = err.message)
+                return@addSnapshotListener
+            }
+            trySend(
+                snap?.documents.orEmpty().map { d ->
+                    Member(
+                        uid = d.id,
+                        email = d.getString("email") ?: "",
+                        displayName = d.getString("displayName") ?: d.getString("email") ?: d.id,
+                        role = d.getString("role") ?: "staff"
+                    )
+                }.sortedWith(compareBy({ it.role != "admin" }, { it.displayName.lowercase() }))
+            )
+        }
+        awaitClose { reg.remove() }
+    }
+
+    fun observeInvites(): Flow<List<Invite>> = callbackFlow {
+        val school = schoolDoc()
+        if (school == null) { trySend(emptyList()); close(); return@callbackFlow }
+        val reg = school.collection("invites").addSnapshotListener { snap, err ->
+            if (err != null) return@addSnapshotListener
+            trySend(
+                snap?.documents.orEmpty()
+                    .map { Invite(email = it.id, role = it.getString("role") ?: "staff") }
+                    .sortedBy { it.email }
+            )
+        }
+        awaitClose { reg.remove() }
+    }
+
+    /** Invites are keyed by lowercase email — the UID doesn't exist until first sign-in. */
+    suspend fun inviteStaff(email: String, role: String, invitedByUid: String?): Result<Unit> {
+        val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
+        return runCatching {
+            school.collection("invites").document(email.trim().lowercase())
+                .set(
+                    hashMapOf(
+                        "role" to role,
+                        "invitedBy" to invitedByUid,
+                        "createdAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+        }
+    }
+
+    suspend fun revokeInvite(email: String): Result<Unit> {
+        val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
+        return runCatching {
+            school.collection("invites").document(email.trim().lowercase()).delete().await()
+        }
+    }
+
+    suspend fun setMemberRole(uid: String, role: String): Result<Unit> {
+        val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
+        return runCatching {
+            school.collection("members").document(uid)
+                .set(hashMapOf("role" to role), com.google.firebase.firestore.SetOptions.merge())
+                .await()
+        }
+    }
+
+    suspend fun removeMember(uid: String): Result<Unit> {
+        val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
+        return runCatching { school.collection("members").document(uid).delete().await() }
+    }
+
+    /**
+     * Turns an invite into a member doc on first sign-in. Called after auth; a
+     * no-op for users who are already provisioned or were never invited.
+     */
+    suspend fun claimInviteIfPresent(uid: String, email: String, displayName: String): Boolean {
+        val school = schoolDoc() ?: return false
+        val key = email.trim().lowercase()
+        return runCatching {
+            val existing = school.collection("members").document(uid).get().await()
+            if (existing.exists()) return false
+
+            val invite = school.collection("invites").document(key).get().await()
+            if (!invite.exists()) return false
+
+            val role = invite.getString("role") ?: "staff"
+            school.collection("members").document(uid).set(
+                hashMapOf(
+                    "role" to role,
+                    "email" to email,
+                    "displayName" to displayName,
+                    "joinedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            // Tidy up so the pending list reflects reality.
+            runCatching { school.collection("invites").document(key).delete().await() }
+            true
+        }.getOrDefault(false)
+    }
 
     // ---- Roster -------------------------------------------------------------
 

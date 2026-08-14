@@ -43,6 +43,22 @@ data class Pass(
     val printConfirmed: Boolean
 )
 
+/** A provisioned staff account for this school. */
+data class Member(
+    val uid: String,
+    val email: String,
+    val displayName: String,
+    val role: String  // "admin" | "staff"
+) {
+    val isAdmin: Boolean get() = role == "admin"
+}
+
+/** A staff member invited by email who hasn't signed in yet. */
+data class Invite(
+    val email: String,
+    val role: String
+)
+
 /** Everything the receipt needs; mirrors the PWA's buildEscPosReceipt input. */
 data class PassReceipt(
     val title: String,

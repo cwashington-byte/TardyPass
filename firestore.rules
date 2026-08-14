@@ -28,9 +28,38 @@ service cloud.firestore {
       allow read: if isMember(schoolId);
       allow write: if isAdmin(schoolId);
 
+      function invitePath(schoolId) {
+        return /databases/$(database)/documents/schools/$(schoolId)/invites/$(request.auth.token.email.lower());
+      }
+
+      function hasInvite(schoolId) {
+        return isSignedIn() && exists(invitePath(schoolId));
+      }
+
       match /members/{uid} {
         allow read: if isMember(schoolId);
-        allow write: if isAdmin(schoolId);
+        allow update, delete: if isAdmin(schoolId);
+
+        // Admins provision anyone. A newly invited staff member provisions only
+        // themselves, only with the role the admin chose — so an invite can't be
+        // escalated to admin by the person claiming it.
+        allow create: if isAdmin(schoolId)
+                      || (isSignedIn()
+                          && request.auth.uid == uid
+                          && hasInvite(schoolId)
+                          && request.resource.data.role == get(invitePath(schoolId)).data.role
+                          && request.resource.data.email == request.auth.token.email);
+      }
+
+      match /invites/{email} {
+        // An invitee must be able to see their own invite to claim it; members
+        // can list invites so admins can manage them.
+        allow read: if isMember(schoolId)
+                    || (isSignedIn() && request.auth.token.email.lower() == email);
+        allow create, update: if isAdmin(schoolId);
+        // Admins revoke; the invitee clears their own once claimed.
+        allow delete: if isAdmin(schoolId)
+                      || (isSignedIn() && request.auth.token.email.lower() == email);
       }
 
       match /students/{studentId} {

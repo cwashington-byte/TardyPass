@@ -43,9 +43,16 @@ class AuthViewModel(
         viewModelScope.launch {
             val msg = when (val r = auth.signIn(activityContext)) {
                 is SignInResult.Success -> {
+                    // Turns a pending email invite into real access on first sign-in.
+                    val claimed = sync.claimInviteIfPresent(
+                        uid = r.user.uid,
+                        email = r.user.email,
+                        displayName = r.user.displayName
+                    )
                     sync.startRosterListener()
                     sync.startMemberListener(r.user.uid)
-                    "Signed in as ${r.user.displayName}"
+                    if (claimed) "Welcome, ${r.user.displayName} — access granted"
+                    else "Signed in as ${r.user.displayName}"
                 }
                 is SignInResult.Cancelled -> null
                 is SignInResult.NoCredentials ->

@@ -43,7 +43,8 @@ fun SettingsScreen(
     vm: SettingsViewModel,
     authVm: AuthViewModel? = null,
     rosterCount: Int = 0,
-    onOpenImport: (() -> Unit)? = null
+    onOpenImport: (() -> Unit)? = null,
+    onOpenAdmin: (() -> Unit)? = null
 ) {
     val settings by vm.settings.collectAsState()
     val availability by vm.availability.collectAsState()
@@ -67,6 +68,22 @@ fun SettingsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         authVm?.let { com.iar.tardypass.ui.auth.AccountCard(it) }
+
+        // Admin-only entry point. This is convenience, not security — every write
+        // it performs is independently checked by the Firestore rules.
+        if (role == "admin" && onOpenAdmin != null) {
+            CollapsibleCard("Administration", initiallyExpanded = true) {
+                Text(
+                    "Invite staff, set roles, and remove access.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Button(
+                    onClick = onOpenAdmin,
+                    modifier = Modifier.fillMaxWidth().height(50.dp)
+                ) { Text("Manage staff") }
+            }
+        }
 
         CollapsibleCard("Roster", initiallyExpanded = true) {
             Text(

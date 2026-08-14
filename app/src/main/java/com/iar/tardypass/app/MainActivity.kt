@@ -29,6 +29,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.iar.tardypass.ui.admin.AdminScreen
+import com.iar.tardypass.ui.admin.AdminViewModel
 import com.iar.tardypass.ui.auth.AuthViewModel
 import com.iar.tardypass.ui.home.HomeScreen
 import com.iar.tardypass.ui.home.HomeViewModel
@@ -59,6 +61,7 @@ class MainActivity : ComponentActivity() {
             ImportViewModel::class.java ->
                 ImportViewModel(container.students, container.pendingSharedCsv) as T
             AuthViewModel::class.java -> AuthViewModel(container.auth, container.sync) as T
+            AdminViewModel::class.java -> AdminViewModel(container.sync, container.auth) as T
             else -> throw IllegalArgumentException("Unknown ViewModel $modelClass")
         }
     }
@@ -157,7 +160,15 @@ class MainActivity : ComponentActivity() {
                         vm = viewModel(factory = vmFactory),
                         authVm = viewModel(factory = vmFactory),
                         rosterCount = count,
-                        onOpenImport = { navController.navigate("import") }
+                        onOpenImport = { navController.navigate("import") },
+                        onOpenAdmin = { navController.navigate("admin") }
+                    )
+                }
+                composable("admin") {
+                    AdminScreen(
+                        vm = viewModel(factory = vmFactory),
+                        schoolDomain = SCHOOL_EMAIL_DOMAIN,
+                        onBack = { navController.popBackStack() }
                     )
                 }
             }
