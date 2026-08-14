@@ -2,19 +2,27 @@ package com.iar.tardypass.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.iar.tardypass.data.repo.AppSettings
 import com.iar.tardypass.data.repo.PassRepository
 import com.iar.tardypass.data.repo.SettingsRepository
 import com.iar.tardypass.data.repo.StudentRepository
+import com.iar.tardypass.domain.Member
 import com.iar.tardypass.domain.Pass
 import com.iar.tardypass.domain.PassReceipt
 import com.iar.tardypass.domain.Student
+import com.iar.tardypass.domain.initialsFrom
 import com.iar.tardypass.printing.EscPos
 import com.iar.tardypass.printing.PrinterManager
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -47,10 +55,22 @@ data class HomeUiState(
     val printing: Boolean = false,
     val banner: BannerMessage? = null,
     val rosterCount: Int = 0,
-    val hideReason: Boolean = false
+    val hideReason: Boolean = false,
+    /** True when signed in as a shared printer, so staff pick their own name. */
+    val deviceMode: Boolean = false,
+    val selectedStaff: SelectedStaff? = null,
+    val staffChoices: List<Member> = emptyList(),
+    val staffPickerOpen: Boolean = false,
+    /** A print interrupted to ask who is issuing it; resumes once they choose. */
+    val pendingPrintExcused: Boolean? = null
 )
 
-@OptIn(FlowPreview::class)
+/** Who is currently claiming passes on a shared printer. */
+data class SelectedStaff(val uid: String, val name: String) {
+    val initials: String get() = initialsFrom(name)
+}
+
+@OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class HomeViewModel(
     private val students: StudentRepository,
     private val passes: PassRepository,
@@ -71,11 +91,44 @@ class HomeViewModel(
 
     init {
         viewModelScope.launch {
-            settings.settings.collect { cfg ->
-                _state.value = _state.value.copy(
-                    initials = _state.value.initials.ifEmpty { cfg.staffInitials },
-                    hideReason = cfg.hideReason
-                )
+            // memberRole is null for a moment on cold start; the cached role keeps
+            // the app from briefly looking like a personal account and attributing
+            // an early press to the printer itself.
+            val roleFlow = sync?.memberRole ?: flowOf(null)
+            combine(settings.settings, roleFlow) { cfg, role -> cfg to role }
+                .collect { (cfg, role) ->
+                    val effectiveRole = role ?: cfg.lastKnownRole.takeIf { it.isNotEmpty() }
+                    val expired = isExpired(cfg)
+                    if (expired) launch { settings.clearSelectedStaff() }
+                    _state.value = _state.value.copy(
+                        initials = _state.value.initials.ifEmpty { cfg.staffInitials },
+                        hideReason = cfg.hideReason,
+                        deviceMode = effectiveRole == "device",
+                        selectedStaff = if (expired || cfg.selectedStaffUid.isEmpty()) null
+                        else SelectedStaff(cfg.selectedStaffUid, cfg.selectedStaffName)
+                    )
+                }
+        }
+        // Only a shared printer needs the staff directory, so a personal install
+        // never opens this listener.
+        viewModelScope.launch {
+            (sync?.memberRole ?: flowOf(null))
+                .flatMapLatest { role ->
+                    if (role == "device") sync?.observeMembers() ?: flowOf(emptyList())
+                    else flowOf(emptyList())
+                }
+                .collect { members ->
+                    _state.value = _state.value.copy(staffChoices = members.filterNot { it.isDevice })
+                }
+        }
+        // Nudges the UI so an idle selection visibly expires without a print.
+        viewModelScope.launch {
+            while (true) {
+                delay(30_000)
+                val cfg = settings.current()
+                if (isExpired(cfg)) {
+                    settings.clearSelectedStaff()
+                }
             }
         }
         viewModelScope.launch {
@@ -94,6 +147,49 @@ class HomeViewModel(
     fun onQueryChange(q: String) {
         _state.value = _state.value.copy(query = q)
         queryFlow.value = q
+    }
+
+    /**
+     * Recomputed from the stored wall-clock stamp rather than a live timer, so
+     * process death and reboot are handled for free. Wall clock (not
+     * elapsedRealtime) because that one resets on reboot and would make an
+     * overnight selection look fresh.
+     */
+    private fun isExpired(cfg: AppSettings, now: Long = System.currentTimeMillis()): Boolean {
+        if (cfg.selectedStaffUid.isEmpty()) return false
+        if (cfg.staffTimeoutMinutes <= 0) return false
+        val age = now - cfg.selectedStaffAtMillis
+        return age >= cfg.staffTimeoutMinutes * 60_000L || age < 0 // negative = clock moved back
+    }
+
+    fun openStaffPicker() {
+        _state.value = _state.value.copy(staffPickerOpen = true)
+    }
+
+    fun dismissStaffPicker() {
+        // Abandons any print that was waiting on a name rather than leaving it armed.
+        _state.value = _state.value.copy(staffPickerOpen = false, pendingPrintExcused = null)
+    }
+
+    fun onStaffSelected(member: Member) {
+        val resume = _state.value.pendingPrintExcused
+        _state.value = _state.value.copy(
+            selectedStaff = SelectedStaff(member.uid, member.displayName),
+            staffPickerOpen = false,
+            pendingPrintExcused = null
+        )
+        viewModelScope.launch {
+            settings.setSelectedStaff(member.uid, member.displayName)
+            // The press that opened the picker continues on its own.
+            if (resume != null) doPrint(resume, skipDuplicateCheck = true)
+        }
+    }
+
+    fun clearSelectedStaff() {
+        _state.value = _state.value.copy(
+            selectedStaff = null, staffPickerOpen = false, pendingPrintExcused = null
+        )
+        viewModelScope.launch { settings.clearSelectedStaff() }
     }
 
     fun onInitialsChange(v: String) {
@@ -153,6 +249,22 @@ class HomeViewModel(
                 return@launch
             }
 
+            // Re-check expiry at the moment of the press: a press landing between
+            // expiry and the next 30s tick must not attribute to whoever left.
+            val cfgNow = settings.current()
+            val selected = _state.value.selectedStaff?.takeUnless { isExpired(cfgNow) }
+            if (_state.value.deviceMode && selected == null) {
+                if (selected == null && _state.value.selectedStaff != null) {
+                    settings.clearSelectedStaff()
+                }
+                _state.value = _state.value.copy(
+                    selectedStaff = null,
+                    pendingPrintExcused = excused,
+                    staffPickerOpen = true
+                )
+                return@launch
+            }
+
             _state.value = _state.value.copy(printing = true, banner = null)
             val cfg = settings.current()
             val now = Date() // captured at button press — the printed and logged time agree
@@ -173,7 +285,9 @@ class HomeViewModel(
                 course = if (cfg.hideCourse) null else entry?.course?.ifBlank { null },
                 room = if (cfg.hideRoom) null else entry?.room?.ifBlank { null },
                 reason = reason,
-                staff = st.initials.trim().ifEmpty { null },
+                // On a shared printer the picked person's initials are authoritative;
+                // the typed field is only a fallback for unsynced devices.
+                staff = selected?.initials ?: st.initials.trim().ifEmpty { null },
                 status = if (excused) "Excused" else "Unexcused"
             )
             val job = EscPos.buildReceipt(receipt, cfg.encoding, cfg.selectCodePage)
@@ -181,7 +295,13 @@ class HomeViewModel(
 
             if (result.succeeded) {
                 if (cfg.enableLogging) {
-                    val staff = auth?.currentUser?.value
+                    val account = auth?.currentUser?.value
+                    val deviceMode = _state.value.deviceMode
+                    // In device mode the pass belongs to the person who picked
+                    // their name; the signed-in account is only the machine.
+                    val attributedUid = if (deviceMode) selected?.uid else account?.uid
+                    val attributedName = if (deviceMode) selected?.name else account?.displayName
+
                     val pass = Pass(
                         studentId = form.student.id,
                         studentFirstName = form.student.firstName,
@@ -191,18 +311,28 @@ class HomeViewModel(
                         course = entry?.course ?: "",
                         room = entry?.room ?: "",
                         reason = reason,
-                        staffInitials = st.initials.trim().ifEmpty { null },
-                        staffUid = staff?.uid,
-                        staffName = staff?.displayName,
+                        staffInitials = selected?.initials ?: st.initials.trim().ifEmpty { null },
+                        staffUid = attributedUid,
+                        staffName = attributedName,
                         excused = excused,
                         printDriver = driverId,
                         printConfirmed = result.confirmed
                     )
                     passes.record(pass)
+
                     // Queues into Firestore's offline cache; flushes when online.
-                    if (staff != null) {
-                        sync?.recordPass(pass, staff.uid, staff.displayName, form.student.grade)
+                    // Skipped when we have no attribution — the rules would reject
+                    // it anyway, and a failed write just shows a red banner.
+                    val canSync = account != null && attributedUid != null &&
+                        (!deviceMode || attributedUid != account.uid)
+                    if (canSync) {
+                        sync?.recordPass(
+                            pass, attributedUid, attributedName, form.student.grade,
+                            deviceUid = if (deviceMode) account!!.uid else null,
+                            deviceName = if (deviceMode) account!!.displayName else null
+                        )
                     }
+                    if (deviceMode) settings.touchSelectedStaff()
                 }
                 val confirmNote = if (result.confirmed) "printed" else "sent to printer"
                 _state.value = _state.value.copy(

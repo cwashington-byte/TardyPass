@@ -3,6 +3,8 @@ package com.iar.tardypass.data.repo
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.iar.tardypass.printing.PrinterEncoding
@@ -30,6 +32,13 @@ data class AppSettings(
     val passTitle: String = "IAR Tardy Pass",
     val passFooter: String = "Proceed directly to class.",
     val staffInitials: String = "",             // remembered across passes (PWA re-typed every time)
+    // Shared-device mode: who is currently claiming passes on this printer.
+    val selectedStaffUid: String = "",
+    val selectedStaffName: String = "",
+    val selectedStaffAtMillis: Long = 0L,
+    val staffTimeoutMinutes: Int = 5,           // 0 = never clear
+    /** Last role Firestore reported, so a cold start knows the mode immediately. */
+    val lastKnownRole: String = "",
     val serialDevicePath: String = "",          // filled by Phase 0 discovery / probing
     val bluetoothAddress: String = "",
     val schoolId: String = DEFAULT_SCHOOL_ID    // multi-school later without migration
@@ -49,6 +58,11 @@ class SettingsRepository(private val context: Context) {
         val PASS_TITLE = stringPreferencesKey("pass_title")
         val PASS_FOOTER = stringPreferencesKey("pass_footer")
         val STAFF_INITIALS = stringPreferencesKey("staff_initials")
+        val SELECTED_STAFF_UID = stringPreferencesKey("selected_staff_uid")
+        val SELECTED_STAFF_NAME = stringPreferencesKey("selected_staff_name")
+        val SELECTED_STAFF_AT = longPreferencesKey("selected_staff_at")
+        val STAFF_TIMEOUT_MIN = intPreferencesKey("staff_timeout_min")
+        val LAST_KNOWN_ROLE = stringPreferencesKey("last_known_role")
         val SERIAL_PATH = stringPreferencesKey("serial_device_path")
         val BT_ADDRESS = stringPreferencesKey("bt_address")
         val SCHOOL_ID = stringPreferencesKey("school_id")
@@ -68,6 +82,11 @@ class SettingsRepository(private val context: Context) {
             passTitle = p[Keys.PASS_TITLE] ?: "IAR Tardy Pass",
             passFooter = p[Keys.PASS_FOOTER] ?: "Proceed directly to class.",
             staffInitials = p[Keys.STAFF_INITIALS] ?: "",
+            selectedStaffUid = p[Keys.SELECTED_STAFF_UID] ?: "",
+            selectedStaffName = p[Keys.SELECTED_STAFF_NAME] ?: "",
+            selectedStaffAtMillis = p[Keys.SELECTED_STAFF_AT] ?: 0L,
+            staffTimeoutMinutes = p[Keys.STAFF_TIMEOUT_MIN] ?: 5,
+            lastKnownRole = p[Keys.LAST_KNOWN_ROLE] ?: "",
             serialDevicePath = p[Keys.SERIAL_PATH] ?: "",
             bluetoothAddress = p[Keys.BT_ADDRESS] ?: "",
             schoolId = p[Keys.SCHOOL_ID] ?: DEFAULT_SCHOOL_ID
@@ -86,6 +105,29 @@ class SettingsRepository(private val context: Context) {
     suspend fun setEnableLogging(v: Boolean) = context.dataStore.edit { it[Keys.ENABLE_LOGGING] = v }
     suspend fun setPassTitle(v: String) = context.dataStore.edit { it[Keys.PASS_TITLE] = v }
     suspend fun setStaffInitials(v: String) = context.dataStore.edit { it[Keys.STAFF_INITIALS] = v }
+
+    /** All three written together so uid, name and timestamp can never desync. */
+    suspend fun setSelectedStaff(uid: String, name: String) = context.dataStore.edit {
+        it[Keys.SELECTED_STAFF_UID] = uid
+        it[Keys.SELECTED_STAFF_NAME] = name
+        it[Keys.SELECTED_STAFF_AT] = System.currentTimeMillis()
+    }
+
+    suspend fun clearSelectedStaff() = context.dataStore.edit {
+        it[Keys.SELECTED_STAFF_UID] = ""
+        it[Keys.SELECTED_STAFF_NAME] = ""
+        it[Keys.SELECTED_STAFF_AT] = 0L
+    }
+
+    /** Extends the idle window after activity, without changing who is selected. */
+    suspend fun touchSelectedStaff() = context.dataStore.edit {
+        if (!it[Keys.SELECTED_STAFF_UID].isNullOrEmpty()) {
+            it[Keys.SELECTED_STAFF_AT] = System.currentTimeMillis()
+        }
+    }
+
+    suspend fun setStaffTimeoutMinutes(v: Int) = context.dataStore.edit { it[Keys.STAFF_TIMEOUT_MIN] = v }
+    suspend fun setLastKnownRole(v: String) = context.dataStore.edit { it[Keys.LAST_KNOWN_ROLE] = v }
     suspend fun setSerialDevicePath(v: String) = context.dataStore.edit { it[Keys.SERIAL_PATH] = v }
     suspend fun setBluetoothAddress(v: String) = context.dataStore.edit { it[Keys.BT_ADDRESS] = v }
 }

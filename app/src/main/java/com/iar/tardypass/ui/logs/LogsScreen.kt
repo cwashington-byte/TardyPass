@@ -130,8 +130,11 @@ fun LogsScreen(vm: LogsViewModel) {
                                     append(SimpleDateFormat("MM/dd hh:mm a", Locale.US).format(Date(p.timestampMillis)))
                                     if (p.period.isNotBlank()) append(" · ${p.period}")
                                     p.reason?.let { append(" · $it") }
-                                    // Prefer the verified account name over typed initials.
+                                    // The account name where we have one, else typed
+                                    // initials. On a shared printer this is the name
+                                    // the person selected — self-reported, not proven.
                                     (p.staffName ?: p.staffInitials)?.let { append(" · $it") }
+                                    p.deviceName?.let { append(" · via $it") }
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)

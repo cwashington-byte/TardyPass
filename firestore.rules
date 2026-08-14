@@ -4,6 +4,15 @@ rules_version = '2';
 // default-deny with explicit membership gating. Being signed in with a Google
 // account is NOT enough: an admin must create a member doc for that uid. This is
 // what keeps a student's own Workspace account from reading the roster.
+//
+// Roles are 'admin' | 'staff' | 'device'. A 'device' is a shared hallway printer
+// signed in with its own dedicated Workspace account, never a person. Because
+// many people use one printer, a device may attribute a pass to any provisioned
+// member rather than only to itself — the person identifies themselves in the
+// app. That identity is CLAIMED, not proven. What these rules still guarantee is
+// (a) which machine produced the pass, and (b) that the claimed author is a real
+// member of this school. A personal account keeps the old, stronger guarantee:
+// it can only ever attribute a pass to itself.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -11,16 +20,32 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function memberPathFor(schoolId, uid) {
+      return /databases/$(database)/documents/schools/$(schoolId)/members/$(uid);
+    }
+
     function memberPath(schoolId) {
-      return /databases/$(database)/documents/schools/$(schoolId)/members/$(request.auth.uid);
+      return memberPathFor(schoolId, request.auth.uid);
     }
 
     function isMember(schoolId) {
       return isSignedIn() && exists(memberPath(schoolId));
     }
 
+    // Defaulted, so a member doc written before roles existed still resolves —
+    // this matches the client, which reads a missing role as "staff".
+    function roleOf(schoolId) {
+      return get(memberPath(schoolId)).data.get('role', 'staff');
+    }
+
     function isAdmin(schoolId) {
-      return isMember(schoolId) && get(memberPath(schoolId)).data.role == 'admin';
+      return isMember(schoolId) && roleOf(schoolId) == 'admin';
+    }
+
+    // A shared printer. It can never also be an admin — role is one string — and
+    // members/{uid} writes stay admin-only, so a device cannot promote itself.
+    function isDevice(schoolId) {
+      return isMember(schoolId) && roleOf(schoolId) == 'device';
     }
 
     match /schools/{schoolId} {
@@ -34,6 +59,34 @@ service cloud.firestore {
 
       function hasInvite(schoolId) {
         return isSignedIn() && exists(invitePath(schoolId));
+      }
+
+      function passHasStudent() {
+        return request.resource.data.studentId is string
+               && request.resource.data.studentId.size() > 0;
+      }
+
+      // A person attributes a pass only to themselves, and may not dress it up as
+      // having come from a printer. The null tolerance matters: the Firestore SDK
+      // writes an explicit null for a key set to null, so "key absent" alone is
+      // not a safe test.
+      function selfAttributedPass() {
+        return request.resource.data.staffUid == request.auth.uid
+               && (!('deviceUid' in request.resource.data)
+                   || request.resource.data.deviceUid == null);
+      }
+
+      // A printer stamps its own uid as the issuing machine and names a real
+      // member — anyone except itself — as the claimed author. Refusing
+      // self-attribution is what stops a pass quietly reading "issued by
+      // Pass Printer 01" when nobody picked a name.
+      function deviceAttributedPass(schoolId) {
+        return request.resource.data.deviceUid == request.auth.uid
+               && request.resource.data.staffUid is string
+               && request.resource.data.staffUid != request.auth.uid
+               && request.resource.data.staffName is string
+               && request.resource.data.staffName.size() > 0
+               && exists(memberPathFor(schoolId, request.resource.data.staffUid));
       }
 
       match /members/{uid} {
@@ -55,9 +108,10 @@ service cloud.firestore {
       }
 
       match /invites/{email} {
-        // An invitee must be able to see their own invite to claim it; members
-        // can list invites so admins can manage them.
-        allow read: if isMember(schoolId)
+        // An invitee must be able to see their own invite to claim it. Listing
+        // every pending invite is admin-only — a shared printer has no business
+        // enumerating staff email addresses.
+        allow read: if isAdmin(schoolId)
                     || (isSignedIn() && request.auth.token.email.lower() == email);
         allow create, update: if isAdmin(schoolId);
         // Admins revoke; the invitee clears their own once claimed.
@@ -76,12 +130,15 @@ service cloud.firestore {
       match /passes/{passId} {
         allow read: if isMember(schoolId);
 
-        // Staff may only create passes attributed to themselves — this is what
-        // makes the audit trail meaningful.
+        // Exactly one branch applies to any caller, because a member has exactly
+        // one role. Three document accesses worst case (own member doc, plus the
+        // claimed member doc) — the per-request limit is ten, so don't add
+        // get()s here casually.
         allow create: if isMember(schoolId)
-                      && request.resource.data.staffUid == request.auth.uid
-                      && request.resource.data.studentId is string
-                      && request.resource.data.studentId.size() > 0;
+                      && passHasStudent()
+                      && (isDevice(schoolId)
+                            ? deviceAttributedPass(schoolId)
+                            : selfAttributedPass());
 
         // Passes are an audit record: no edits, and only admins may remove them.
         allow update: if false;

@@ -42,7 +42,10 @@ Still to do:
 - Bell schedule table, so the current period is preselected and the receipt can
   show minutes late.
 - Repeat-tardy threshold alert (the per-student counter already exists).
-- Kiosk / screen-pinning mode for shared hallway devices.
+- **Kiosk / screen-pinning mode for shared hallway devices.** This became a
+  security control rather than polish when printers moved to shared device
+  accounts (`docs/device-accounts.md`): screen pinning is what stops someone
+  wandering out of the app on a device that is permanently signed in.
 - Sideload update channel: GitHub Releases + an in-app version check.
 
 ## Phase 4 — SIS integration

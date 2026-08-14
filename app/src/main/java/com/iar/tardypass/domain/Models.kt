@@ -40,17 +40,28 @@ data class Pass(
     val staffName: String? = null,
     val excused: Boolean,
     val printDriver: String,
-    val printConfirmed: Boolean
+    val printConfirmed: Boolean,
+    /**
+     * Which shared printer issued this, when it came from a device account.
+     * Cloud-only — deliberately not persisted to Room, so adding it needs no
+     * schema migration and local pass history survives upgrades.
+     */
+    val deviceName: String? = null
 )
 
-/** A provisioned staff account for this school. */
+/** A provisioned account for this school — a person, or a shared printer. */
 data class Member(
     val uid: String,
     val email: String,
     val displayName: String,
-    val role: String  // "admin" | "staff"
+    val role: String  // "admin" | "staff" | "device"
 ) {
     val isAdmin: Boolean get() = role == "admin"
+
+    /** A shared hallway printer signed in with its own account, not a person. */
+    val isDevice: Boolean get() = role == "device"
+
+    val initials: String get() = initialsFrom(displayName)
 }
 
 /** A staff member invited by email who hasn't signed in yet. */

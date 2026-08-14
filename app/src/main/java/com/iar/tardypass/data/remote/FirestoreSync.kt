@@ -56,7 +56,7 @@ class FirestoreSync(
     private var rosterListener: ListenerRegistration? = null
     private var memberListener: ListenerRegistration? = null
 
-    /** "admin" | "staff" | null when signed out or not a member of this school. */
+    /** "admin" | "staff" | "device" | null when signed out or not a member here. */
     private val _memberRole = MutableStateFlow<String?>(null)
     val memberRole: StateFlow<String?> = _memberRole
 
@@ -99,7 +99,9 @@ class FirestoreSync(
         pass: Pass,
         staffUid: String?,
         staffName: String?,
-        studentGrade: String? = null
+        studentGrade: String? = null,
+        deviceUid: String? = null,
+        deviceName: String? = null
     ): Boolean {
         val doc = schoolDoc()?.collection("passes")?.document() ?: return false
         val data = hashMapOf(
@@ -126,6 +128,13 @@ class FirestoreSync(
             "printConfirmed" to pass.printConfirmed,
             "schoolYear" to currentSchoolYear()
         )
+        // Added only in device mode. Firestore writes an explicit null for a key
+        // set to null, and the rules treat a present deviceUid as "this claims to
+        // be a printer" — so a personal pass must omit these keys entirely.
+        if (deviceUid != null) {
+            data["deviceUid"] = deviceUid
+            data["deviceName"] = deviceName
+        }
         doc.set(data)
             .addOnFailureListener { e ->
                 _status.value = _status.value.copy(lastError = e.message)
@@ -178,7 +187,8 @@ class FirestoreSync(
         staffName = getString("staffName"),
         excused = getBoolean("excused") ?: false,
         printDriver = getString("printDriver") ?: "",
-        printConfirmed = getBoolean("printConfirmed") ?: false
+        printConfirmed = getBoolean("printConfirmed") ?: false,
+        deviceName = getString("deviceName")
     )
 
     // ---- Staff administration ----------------------------------------------

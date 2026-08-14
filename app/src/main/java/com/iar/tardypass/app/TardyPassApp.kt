@@ -70,6 +70,14 @@ class AppContainer(app: Application) {
                 }
             }
         }
+        // Cache the role so the next cold start knows whether this is a shared
+        // printer before Firestore answers. Only non-null: null conflates
+        // "signed out" with "listener hasn't replied yet".
+        appScope.launch {
+            sync.memberRole.collect { role ->
+                if (role != null) settings.setLastKnownRole(role)
+            }
+        }
     }
 }
 

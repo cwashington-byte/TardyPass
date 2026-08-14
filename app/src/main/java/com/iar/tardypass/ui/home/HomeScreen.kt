@@ -83,6 +83,16 @@ fun HomeScreen(vm: HomeViewModel) {
         }
     }
 
+    if (state.staffPickerOpen) {
+        StaffPickerSheet(
+            choices = state.staffChoices,
+            hasSelection = state.selectedStaff != null,
+            onSelect = { dismissKeyboard(); vm.onStaffSelected(it) },
+            onClear = vm::clearSelectedStaff,
+            onDismiss = vm::dismissStaffPicker
+        )
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
@@ -99,6 +109,15 @@ fun HomeScreen(vm: HomeViewModel) {
                     "${state.rosterCount} students",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
+
+        if (state.deviceMode) {
+            item(key = "staff-bar") {
+                StaffBar(
+                    selected = state.selectedStaff,
+                    onClick = { dismissKeyboard(); vm.openStaffPicker() }
                 )
             }
         }
@@ -141,6 +160,9 @@ fun HomeScreen(vm: HomeViewModel) {
                     initials = state.initials,
                     printing = state.printing,
                     hideReason = state.hideReason,
+                    // The picked person's initials already show in the bar above;
+                    // a second editable copy of the same fact is a footgun.
+                    hideInitials = state.deviceMode && state.selectedStaff != null,
                     onInitials = vm::onInitialsChange,
                     onPeriod = vm::onPeriodChange,
                     onReason = vm::onReasonChange,
@@ -199,6 +221,7 @@ private fun PassFormCard(
     initials: String,
     printing: Boolean,
     hideReason: Boolean,
+    hideInitials: Boolean,
     onInitials: (String) -> Unit,
     onPeriod: (String) -> Unit,
     onReason: (String) -> Unit,
@@ -304,14 +327,16 @@ private fun PassFormCard(
                 }
             }
 
-            OutlinedTextField(
-                value = initials,
-                onValueChange = onInitials,
-                modifier = Modifier.width(160.dp),
-                label = { Text("Staff initials") },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
-            )
+            if (!hideInitials) {
+                OutlinedTextField(
+                    value = initials,
+                    onValueChange = onInitials,
+                    modifier = Modifier.width(160.dp),
+                    label = { Text("Staff initials") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
+                )
+            }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(

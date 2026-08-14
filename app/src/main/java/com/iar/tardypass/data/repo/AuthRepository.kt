@@ -22,11 +22,7 @@ data class StaffUser(
     val email: String
 ) {
     /** Fallback initials for the receipt when the user hasn't set their own. */
-    val initials: String
-        get() = displayName.split(" ")
-            .mapNotNull { it.firstOrNull()?.uppercase() }
-            .take(2)
-            .joinToString("")
+    val initials: String get() = com.iar.tardypass.domain.initialsFrom(displayName)
 }
 
 sealed class SignInResult {

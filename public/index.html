@@ -165,7 +165,9 @@
       <thead>
         <tr>
           <th>Time</th><th>Student</th><th>ID</th><th>Gr</th>
-          <th>Period</th><th>Reason</th><th>Status</th><th>Issued by</th>
+          <th>Period</th><th>Reason</th><th>Status</th>
+          <th title="Names on passes from a shared printer are self-reported by whoever was at the printer.">Issued by</th>
+          <th>Device</th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
@@ -277,12 +279,26 @@ onAuthStateChanged(auth, async (user) => {
 
   // Confirm membership before subscribing, so an unprovisioned user gets a
   // useful message instead of a raw permission error.
-  let isMember = false, isAdmin = false;
+  let isMember = false, isAdmin = false, isDeviceAcct = false;
   try {
     const snap = await getDoc(doc(db, "schools", SCHOOL_ID, "members", user.uid));
     isMember = snap.exists();
     isAdmin = snap.exists() && snap.data().role === "admin";
+    isDeviceAcct = snap.exists() && snap.data().role === "device";
   } catch { isMember = false; }
+
+  // A printer account has no business browsing a term of records from a laptop.
+  // UI-only — the rules still let that uid read — but it removes the obvious path.
+  if (isDeviceAcct) {
+    $("noAccess").hidden = false;
+    $("noAccess").querySelector("h2").textContent = "Printer account";
+    $("noAccess").querySelector("p").textContent =
+      "This is a shared printer's account. Sign in with your own staff account to view records.";
+    $("noAccessWho").textContent = `Signed in as ${user.email}`;
+    $("app").hidden = true;
+    $("rosterCard").hidden = true;
+    return;
+  }
 
   // Upload is admin-only. Hiding it is convenience — the Firestore rules reject
   // student writes from non-admins regardless of what the page shows.
@@ -335,7 +351,8 @@ function subscribe() {
         period: v.period || "",
         reason: v.reason || "",
         excused: !!v.excused,
-        staff: v.staffName || v.staffInitials || ""
+        staff: v.staffName || v.staffInitials || "",
+        device: v.deviceName || ""
       };
     });
     $("dot").className = "dot";
@@ -355,7 +372,7 @@ function filtered() {
     if (mode === "unexcused" && r.excused) return false;
     if (mode === "excused" && !r.excused) return false;
     if (!needle) return true;
-    return [r.first, r.last, r.sid, r.staff, r.reason, r.period]
+    return [r.first, r.last, r.sid, r.staff, r.reason, r.period, r.device]
       .join(" ").toLowerCase().includes(needle);
   });
 }
@@ -375,7 +392,8 @@ function render() {
       ["", r.period],
       ["", r.reason],
       ["tag", r.excused ? "EXCUSED" : "UNEXCUSED"],
-      ["", r.staff]
+      ["", r.staff],
+      ["", r.device]
     ];
     for (const [cls, val] of cells) {
       const td = document.createElement("td");
@@ -402,14 +420,14 @@ function render() {
 // ---- clerk helpers -------------------------------------------------------
 
 function tsv() {
-  const head = ["Student_Number","Last_Name","First_Name","Date","Time","Period","Reason","Status","Issued_By"];
+  const head = ["Student_Number","Last_Name","First_Name","Date","Time","Period","Reason","Status","Issued_By","Issued_On_Device"];
   const lines = [head.join("\t")];
   for (const r of filtered()) {
     const d = new Date(r.t);
     lines.push([
       r.sid, r.last, r.first,
       d.toLocaleDateString(), fmtTime(r.t),
-      r.period, r.reason, r.excused ? "Excused" : "Unexcused", r.staff
+      r.period, r.reason, r.excused ? "Excused" : "Unexcused", r.staff, r.device
     ].join("\t"));
   }
   return lines.join("\n");

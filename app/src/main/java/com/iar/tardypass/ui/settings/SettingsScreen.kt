@@ -193,6 +193,27 @@ fun SettingsScreen(
             }
         }
 
+        if (role == "device") {
+            CollapsibleCard("Staff selection", initiallyExpanded = true) {
+                Text(
+                    "Clear the selected staff member after this much inactivity, so the " +
+                        "next person doesn't print under someone else's name.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(0 to "Off", 2 to "2 min", 5 to "5 min", 10 to "10 min", 30 to "30 min")
+                        .forEach { (mins, label) ->
+                            ChoiceChip(
+                                selected = settings.staffTimeoutMinutes == mins,
+                                onClick = { vm.setStaffTimeoutMinutes(mins) },
+                                label = label
+                            )
+                        }
+                }
+            }
+        }
+
         CollapsibleCard("Records") {
             ToggleRow("Log printed passes", settings.enableLogging, vm::setEnableLogging)
         }
