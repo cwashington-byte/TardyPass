@@ -29,6 +29,7 @@ class AuthViewModel(
     val state: StateFlow<AuthUiState> = _state
 
     val syncStatus = sync.status
+    val memberRole = sync.memberRole
 
     init {
         viewModelScope.launch {
@@ -43,6 +44,7 @@ class AuthViewModel(
             val msg = when (val r = auth.signIn(activityContext)) {
                 is SignInResult.Success -> {
                     sync.startRosterListener()
+                    sync.startMemberListener(r.user.uid)
                     "Signed in as ${r.user.displayName}"
                 }
                 is SignInResult.Cancelled -> null
@@ -62,6 +64,7 @@ class AuthViewModel(
     fun signOut() {
         auth.signOut()
         sync.stopRosterListener()
+        sync.stopMemberListener()
         _state.value = _state.value.copy(message = "Signed out")
     }
 

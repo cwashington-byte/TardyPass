@@ -52,8 +52,37 @@ class FirestoreSync(
     val status: StateFlow<SyncStatus> = _status
 
     private var rosterListener: ListenerRegistration? = null
+    private var memberListener: ListenerRegistration? = null
+
+    /** "admin" | "staff" | null when signed out or not a member of this school. */
+    private val _memberRole = MutableStateFlow<String?>(null)
+    val memberRole: StateFlow<String?> = _memberRole
 
     val isAvailable: Boolean get() = db != null
+
+    /**
+     * Watches this user's own member doc. A listener (not a one-shot read) so a
+     * role change takes effect without needing to sign out and back in; it's a
+     * single document, so the read cost is negligible.
+     */
+    fun startMemberListener(uid: String) {
+        val school = schoolDoc() ?: return
+        memberListener?.remove()
+        memberListener = school.collection("members").document(uid)
+            .addSnapshotListener { snapshot, error ->
+                _memberRole.value = when {
+                    error != null -> null
+                    snapshot?.exists() == true -> snapshot.getString("role") ?: "staff"
+                    else -> null // signed in but not provisioned for this school
+                }
+            }
+    }
+
+    fun stopMemberListener() {
+        memberListener?.remove()
+        memberListener = null
+        _memberRole.value = null
+    }
 
     private fun schoolDoc() = db?.collection("schools")?.document(schoolId())
 

@@ -60,8 +60,12 @@ class AppContainer(app: Application) {
             sync.onRosterSnapshot = { entities ->
                 appScope.launch { db.studentDao().upsertAll(entities) }
             }
-            if (BuildConfig.FIREBASE_CONFIGURED && auth.currentUser.value != null) {
-                sync.startRosterListener()
+            // Restore listeners for a session that persisted across app restarts.
+            auth.currentUser.value?.let { user ->
+                if (BuildConfig.FIREBASE_CONFIGURED) {
+                    sync.startRosterListener()
+                    sync.startMemberListener(user.uid)
+                }
             }
         }
     }

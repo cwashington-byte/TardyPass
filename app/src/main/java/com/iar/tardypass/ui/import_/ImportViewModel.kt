@@ -12,7 +12,12 @@ sealed class ImportUiState {
     data object Idle : ImportUiState()
     data object Parsing : ImportUiState()
     data class Preview(val text: String, val result: RosterImportResult) : ImportUiState()
-    data class Done(val imported: Int, val errorCount: Int) : ImportUiState()
+    data class Done(
+        val imported: Int,
+        val errorCount: Int,
+        val syncedToCloud: Boolean = false,
+        val syncError: String? = null
+    ) : ImportUiState()
     data class Error(val message: String) : ImportUiState()
 }
 
@@ -59,7 +64,12 @@ class ImportViewModel(
         _state.value = ImportUiState.Parsing
         viewModelScope.launch {
             val outcome = students.importCsv(preview.text, fullReplace)
-            _state.value = ImportUiState.Done(outcome.imported, outcome.errors.size)
+            _state.value = ImportUiState.Done(
+                imported = outcome.imported,
+                errorCount = outcome.errors.size,
+                syncedToCloud = outcome.syncedToCloud,
+                syncError = outcome.syncError
+            )
         }
     }
 

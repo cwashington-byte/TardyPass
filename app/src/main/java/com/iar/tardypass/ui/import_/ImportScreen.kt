@@ -147,6 +147,14 @@ fun ImportScreen(vm: ImportViewModel) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Imported ${s.imported} students ✓", style = MaterialTheme.typography.titleMedium)
                         if (s.errorCount > 0) Text("${s.errorCount} row(s) were skipped.")
+                        Text(
+                            if (s.syncedToCloud) "Synced to all devices."
+                            else "Saved on this device only." +
+                                (s.syncError?.let { " Cloud sync failed: $it" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (s.syncedToCloud) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            else Red600
+                        )
                         TextButton(onClick = vm::reset) { Text("Import another file") }
                     }
                 }

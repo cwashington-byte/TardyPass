@@ -11,7 +11,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -114,10 +113,12 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Import is deliberately not a tab: it's an occasional admin action, and
+        // the cloud roster makes it a once-per-term task rather than a per-device
+        // one. It lives in Settings and is still reachable via the share intent.
         val tabs = listOf(
             Triple("home", "Pass", Icons.Filled.Print),
             Triple("logs", "Logs", Icons.AutoMirrored.Filled.List),
-            Triple("import", "Import", Icons.Filled.Upload),
             Triple("settings", "Settings", Icons.Filled.Settings)
         )
 
@@ -150,9 +151,13 @@ class MainActivity : ComponentActivity() {
                 composable("logs") { LogsScreen(viewModel(factory = vmFactory)) }
                 composable("import") { ImportScreen(viewModel(factory = vmFactory)) }
                 composable("settings") {
+                    val importVm: ImportViewModel = viewModel(factory = vmFactory)
+                    val count by importVm.rosterCount.collectAsState(initial = 0)
                     SettingsScreen(
                         vm = viewModel(factory = vmFactory),
-                        authVm = viewModel(factory = vmFactory)
+                        authVm = viewModel(factory = vmFactory),
+                        rosterCount = count,
+                        onOpenImport = { navController.navigate("import") }
                     )
                 }
             }

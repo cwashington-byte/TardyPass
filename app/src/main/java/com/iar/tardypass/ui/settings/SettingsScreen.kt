@@ -1,16 +1,24 @@
 package com.iar.tardypass.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -20,20 +28,34 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.iar.tardypass.printing.PrinterEncoding
+import com.iar.tardypass.ui.auth.AuthViewModel
 
 @Composable
 fun SettingsScreen(
     vm: SettingsViewModel,
-    authVm: com.iar.tardypass.ui.auth.AuthViewModel? = null
+    authVm: AuthViewModel? = null,
+    rosterCount: Int = 0,
+    onOpenImport: (() -> Unit)? = null
 ) {
     val settings by vm.settings.collectAsState()
     val availability by vm.availability.collectAsState()
     val testResult by vm.testResult.collectAsState()
+    val role = authVm?.memberRole?.collectAsState()?.value
+    val signedIn = authVm?.state?.collectAsState()?.value?.user != null
+
+    // Cloud roster writes are admin-only in the Firestore rules, so a non-admin
+    // import would diverge this device from everyone else. Offline/unconfigured
+    // deployments have no cloud roster at all, so local import stays available.
+    val syncActive = authVm != null && signedIn
+    val canImport = !syncActive || role == "admin"
 
     LaunchedEffect(Unit) { vm.refreshAvailability() }
 
@@ -46,12 +68,46 @@ fun SettingsScreen(
     ) {
         authVm?.let { com.iar.tardypass.ui.auth.AccountCard(it) }
 
-        SectionCard("Printer") {
+        CollapsibleCard("Roster", initiallyExpanded = true) {
+            Text(
+                "$rosterCount active students",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            when {
+                canImport && syncActive -> {
+                    Text(
+                        "Importing updates the roster for every device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Button(
+                        onClick = { onOpenImport?.invoke() },
+                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                    ) { Text("Import roster CSV") }
+                }
+                canImport -> {
+                    Text(
+                        "Not signed in — an import applies to this device only.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Button(
+                        onClick = { onOpenImport?.invoke() },
+                        modifier = Modifier.fillMaxWidth().height(50.dp)
+                    ) { Text("Import roster CSV (this device)") }
+                }
+                else -> Text(
+                    "The roster is managed by an administrator and syncs to this device automatically.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
+        }
+
+        CollapsibleCard("Printer") {
             vm.driverChoices.forEach { (id, name) ->
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     FilterChip(
                         selected = settings.printerDriverId == id,
                         onClick = { vm.setDriver(id) },
@@ -59,9 +115,8 @@ fun SettingsScreen(
                     )
                     Spacer(Modifier.weight(1f))
                     if (id != "auto") {
-                        val avail = availability[id]
                         Text(
-                            when (avail) {
+                            when (availability[id]) {
                                 true -> "available"
                                 false -> "not found"
                                 null -> ""
@@ -77,7 +132,10 @@ fun SettingsScreen(
                 Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
             }
 
-            Text("Encoding (match printer's code system setting)", style = MaterialTheme.typography.labelMedium)
+            Text(
+                "Encoding (match printer's code system setting)",
+                style = MaterialTheme.typography.labelMedium
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PrinterEncoding.entries.forEach { e ->
                     FilterChip(
@@ -92,12 +150,12 @@ fun SettingsScreen(
                 value = settings.serialDevicePath,
                 onValueChange = vm::setSerialPath,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Serial device path (from hardware discovery, e.g. /dev/ttyS1)") },
+                label = { Text("Serial device path (e.g. /dev/ttyS1)") },
                 singleLine = true
             )
         }
 
-        SectionCard("Pass") {
+        CollapsibleCard("Pass") {
             OutlinedTextField(
                 value = settings.passTitle,
                 onValueChange = vm::setPassTitle,
@@ -110,18 +168,41 @@ fun SettingsScreen(
             ToggleRow("Hide room", settings.hideRoom, vm::setHideRoom)
         }
 
-        SectionCard("Records") {
+        CollapsibleCard("Records") {
             ToggleRow("Log printed passes", settings.enableLogging, vm::setEnableLogging)
         }
     }
 }
 
+/**
+ * Settings section that collapses to its header. Printing and pass options are
+ * set once per device and then rarely touched, so they default to collapsed and
+ * keep the screen scannable on a small handheld.
+ */
 @Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+private fun CollapsibleCard(
+    title: String,
+    initiallyExpanded: Boolean = false,
+    content: @Composable () -> Unit
+) {
+    var expanded by remember { mutableStateOf(initiallyExpanded) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            content()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse $title" else "Expand $title"
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+            }
         }
     }
 }
