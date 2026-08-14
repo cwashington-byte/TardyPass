@@ -46,6 +46,7 @@ class SettingsViewModel(
     fun setHidePeriod(v: Boolean) = viewModelScope.launch { settingsRepo.setHidePeriod(v) }
     fun setHideCourse(v: Boolean) = viewModelScope.launch { settingsRepo.setHideCourse(v) }
     fun setHideRoom(v: Boolean) = viewModelScope.launch { settingsRepo.setHideRoom(v) }
+    fun setHideReason(v: Boolean) = viewModelScope.launch { settingsRepo.setHideReason(v) }
     fun setEnableLogging(v: Boolean) = viewModelScope.launch { settingsRepo.setEnableLogging(v) }
     fun setPassTitle(v: String) = viewModelScope.launch { settingsRepo.setPassTitle(v) }
     fun setSerialPath(v: String) = viewModelScope.launch { settingsRepo.setSerialDevicePath(v) }

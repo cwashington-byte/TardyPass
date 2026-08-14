@@ -31,9 +31,6 @@
     align-items: center;
     gap: 14px;
     flex-wrap: wrap;
-    position: sticky;
-    top: 0;
-    z-index: 5;
   }
   h1 { font-size: 17px; margin: 0; font-weight: 650; }
   .spacer { flex: 1; }
@@ -68,11 +65,14 @@
   .stat .n { font-size: 24px; font-weight: 680; line-height: 1.1; }
   .stat .l { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 
+  /* No overflow:hidden here — it silently breaks position:sticky on the header,
+     which then floats down over the first data row and hides it. */
   table { width: 100%; border-collapse: collapse; background: var(--surface);
-          border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+          border: 1px solid var(--border); border-radius: 10px; }
   th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); }
   th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
-       background: #fafbfc; position: sticky; top: 62px; }
+       background: #fafbfc; position: sticky; top: 0; z-index: 2;
+       box-shadow: inset 0 -1px 0 var(--border); }
   tr:last-child td { border-bottom: 0; }
   tbody tr:hover { background: #f8fafc; }
   td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -80,6 +80,13 @@
          padding: 2px 7px; border-radius: 5px; }
   .tag.unex { background: #fee2e2; color: var(--red); }
   .tag.ex { background: #dcfce7; color: var(--green); }
+
+  .roster { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+            padding: 18px; margin-top: 26px; }
+  .roster h3 { margin: 0 0 6px; font-size: 15px; }
+  .roster input[type="file"] { margin: 8px 0; }
+  .roster button { margin-right: 8px; margin-top: 6px; }
+  #previewErrors { color: var(--red); max-height: 140px; overflow: auto; margin: 6px 0; }
 
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
            padding: 26px; text-align: center; }
@@ -137,8 +144,8 @@
       <input type="date" id="date" />
       <button id="today">Today</button>
       <select id="status">
+        <option value="all" selected>All passes</option>
         <option value="unexcused">Unexcused only</option>
-        <option value="all">All passes</option>
         <option value="excused">Excused only</option>
       </select>
       <input type="search" id="q" placeholder="Filter by name, ID, staff…" />
@@ -151,8 +158,7 @@
     <div class="stats">
       <div class="stat"><div class="n" id="cUnex">0</div><div class="l">Unexcused</div></div>
       <div class="stat"><div class="n" id="cEx">0</div><div class="l">Excused</div></div>
-      <div class="stat"><div class="n" id="cTotal">0</div><div class="l">Total</div></div>
-      <div class="stat"><div class="n" id="cStudents">0</div><div class="l">Students</div></div>
+      <div class="stat"><div class="n" id="cTotal">0</div><div class="l">Total passes issued</div></div>
     </div>
 
     <table>
@@ -165,6 +171,25 @@
       <tbody id="rows"></tbody>
     </table>
     <div class="empty" id="empty" hidden>No passes match this view.</div>
+
+    <!-- Admin-only. Writes go straight to Firestore under the same rules the
+         app uses; no Cloud Function or service account involved. -->
+    <section id="rosterCard" class="roster" hidden>
+      <h3>Roster</h3>
+      <p class="small muted" id="rosterCount">—</p>
+      <p class="small muted">
+        Upload a student export (CSV). Existing students are updated and new ones
+        added — nothing is deleted. Every printer picks up the change automatically.
+      </p>
+      <input type="file" id="file" accept=".csv,.txt,text/csv,text/plain" />
+      <div id="preview" hidden>
+        <p class="small" id="previewText"></p>
+        <div id="previewErrors" class="small" hidden></div>
+        <button class="primary" id="doImport">Import</button>
+        <button id="cancelImport">Cancel</button>
+      </div>
+      <p class="small" id="importStatus"></p>
+    </section>
   </div>
 </main>
 
@@ -252,11 +277,17 @@ onAuthStateChanged(auth, async (user) => {
 
   // Confirm membership before subscribing, so an unprovisioned user gets a
   // useful message instead of a raw permission error.
-  let isMember = false;
+  let isMember = false, isAdmin = false;
   try {
     const snap = await getDoc(doc(db, "schools", SCHOOL_ID, "members", user.uid));
     isMember = snap.exists();
+    isAdmin = snap.exists() && snap.data().role === "admin";
   } catch { isMember = false; }
+
+  // Upload is admin-only. Hiding it is convenience — the Firestore rules reject
+  // student writes from non-admins regardless of what the page shows.
+  $("rosterCard").hidden = !isAdmin;
+  if (isAdmin) countRoster();
 
   if (!isMember) {
     $("noAccess").hidden = false;
@@ -366,7 +397,6 @@ function render() {
   $("cUnex").textContent = rowsCache.filter((r) => !r.excused).length;
   $("cEx").textContent = rowsCache.filter((r) => r.excused).length;
   $("cTotal").textContent = rowsCache.length;
-  $("cStudents").textContent = new Set(rowsCache.map((r) => r.sid)).size;
 }
 
 // ---- clerk helpers -------------------------------------------------------
@@ -405,6 +435,160 @@ $("csv").onclick = () => {
   a.click();
   URL.revokeObjectURL(url);
 };
+
+// ---- roster upload (admin only) ------------------------------------------
+
+// Accepts several export shapes: our own CSV, a standard PowerSchool student
+// export, and variations in capitalisation/spacing. Schedule is optional —
+// without it the app simply doesn't show a period picker.
+// Compared after stripping everything but letters/digits, so "First_Name",
+// "first name" and "FirstName" all match the same alias.
+const norm = (h) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
+const COLUMN_ALIASES = {
+  id:    ["studentnumber","studentid","id","localid","number","studentnum"],
+  first: ["firstname","first","studentfirstname","fname"],
+  last:  ["lastname","last","studentlastname","lname"],
+  grade: ["grade","gradelevel","gr"],
+  sched: ["schedule"]
+};
+
+function splitCsvLine(line) {
+  const out = [];
+  let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') q = false;
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === "," || c === "\t") { out.push(cur); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+
+function parseRoster(text) {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n").filter((l) => l.trim() !== "");
+  if (!lines.length) return { students: [], errors: [{ row: 0, msg: "File is empty" }] };
+
+  const rawHeader = splitCsvLine(lines[0]).map((h) => h.trim());
+  const header = rawHeader.map(norm);
+  const find = (key) => header.findIndex((h) => COLUMN_ALIASES[key].includes(h));
+  const idx = { id: find("id"), first: find("first"), last: find("last"),
+                grade: find("grade"), sched: find("sched") };
+
+  if (idx.id < 0 || idx.first < 0 || idx.last < 0) {
+    return { students: [], errors: [{ row: 1, msg:
+      `Missing required columns. Found: ${rawHeader.join(", ") || "(none)"}. ` +
+      `Need a student number, first name, and last name column.` }] };
+  }
+
+  const students = [], errors = [], seen = new Set();
+  for (let i = 1; i < lines.length; i++) {
+    const c = splitCsvLine(lines[i]);
+    const get = (n) => (n >= 0 && c[n] != null ? c[n].trim() : "");
+    const id = get(idx.id), first = get(idx.first), last = get(idx.last);
+    if (!id && !first && !last) continue;
+    if (!id) { errors.push({ row: i + 1, msg: "Missing student number" }); continue; }
+    if (!first || !last) { errors.push({ row: i + 1, msg: `Missing name for ${id}` }); continue; }
+    if (seen.has(id)) { errors.push({ row: i + 1, msg: `Duplicate student number ${id}` }); continue; }
+    seen.add(id);
+
+    let schedule = {};
+    const raw = get(idx.sched);
+    if (raw) {
+      try { schedule = JSON.parse(raw); }
+      catch { errors.push({ row: i + 1, msg: `Unreadable schedule for ${id} — imported without it` }); }
+    }
+    students.push({ id, firstName: first, lastName: last, grade: get(idx.grade), schedule });
+  }
+  return { students, errors };
+}
+
+let pending = null;
+
+$("file").onchange = async (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  $("importStatus").textContent = "";
+  const text = await f.text();
+  const res = parseRoster(text);
+  if (!res.students.length) {
+    $("preview").hidden = true;
+    $("importStatus").textContent = res.errors[0]?.msg || "No students found.";
+    $("importStatus").style.color = "var(--red)";
+    return;
+  }
+  pending = res;
+  $("previewText").textContent =
+    `${res.students.length} student(s) ready to import from ${f.name}.` +
+    (res.errors.length ? ` ${res.errors.length} row(s) will be skipped:` : "");
+  const errBox = $("previewErrors");
+  errBox.hidden = res.errors.length === 0;
+  errBox.innerHTML = res.errors.slice(0, 25)
+    .map((x) => `Row ${x.row}: ${x.msg}`).join("<br>") +
+    (res.errors.length > 25 ? `<br>…and ${res.errors.length - 25} more` : "");
+  $("preview").hidden = false;
+};
+
+$("cancelImport").onclick = () => {
+  pending = null;
+  $("preview").hidden = true;
+  $("file").value = "";
+};
+
+$("doImport").onclick = async () => {
+  if (!pending) return;
+  const { writeBatch, doc: docRef, serverTimestamp } =
+    await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+  $("doImport").disabled = true;
+  $("importStatus").style.color = "";
+  try {
+    const all = pending.students;
+    // Firestore caps a batch at 500 writes; 400 leaves headroom.
+    for (let i = 0; i < all.length; i += 400) {
+      const chunk = all.slice(i, i + 400);
+      const batch = writeBatch(db);
+      for (const s of chunk) {
+        batch.set(
+          docRef(db, "schools", SCHOOL_ID, "students", s.id),
+          {
+            firstName: s.firstName, lastName: s.lastName, grade: s.grade || null,
+            schedule: s.schedule || {}, active: true,
+            updatedAt: serverTimestamp(), source: "web-upload"
+          },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+      $("importStatus").textContent = `Imported ${Math.min(i + 400, all.length)} of ${all.length}…`;
+    }
+    $("importStatus").textContent =
+      `Imported ${all.length} student(s). All devices will update automatically.`;
+    $("preview").hidden = true;
+    $("file").value = "";
+    pending = null;
+    countRoster();
+  } catch (err) {
+    $("importStatus").style.color = "var(--red)";
+    $("importStatus").textContent = `Import failed: ${err.message}`;
+  } finally {
+    $("doImport").disabled = false;
+  }
+};
+
+async function countRoster() {
+  try {
+    const { getCountFromServer, collection: coll } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+    const snap = await getCountFromServer(coll(db, "schools", SCHOOL_ID, "students"));
+    $("rosterCount").textContent = `${snap.data().count} students currently in the roster`;
+  } catch {
+    $("rosterCount").textContent = "";
+  }
+}
 
 $("date").value = ymd(new Date());
 $("date").onchange = subscribe;

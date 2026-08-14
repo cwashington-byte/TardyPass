@@ -22,14 +22,17 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-val REASONS = listOf("Late", "Restroom", "DOS", "Main Office", "Break", "Other")
+val REASONS = listOf("Tardy", "Restroom", "DOS", "Main Office", "Break", "Other")
+
+/** Used when the reason picker is hidden — every pass is simply a tardy. */
+const val DEFAULT_REASON = "Tardy"
 
 data class BannerMessage(val text: String, val isError: Boolean = false)
 
 data class PassFormState(
     val student: Student,
     val period: String,
-    val reason: String = "Late",
+    val reason: String = DEFAULT_REASON,
     val customReason: String = "",
     val termPassCount: Int = 0,
     val recentPasses: List<Pass> = emptyList(),
@@ -43,7 +46,8 @@ data class HomeUiState(
     val initials: String = "",
     val printing: Boolean = false,
     val banner: BannerMessage? = null,
-    val rosterCount: Int = 0
+    val rosterCount: Int = 0,
+    val hideReason: Boolean = false
 )
 
 @OptIn(FlowPreview::class)
@@ -67,7 +71,12 @@ class HomeViewModel(
 
     init {
         viewModelScope.launch {
-            _state.value = _state.value.copy(initials = settings.current().staffInitials)
+            settings.settings.collect { cfg ->
+                _state.value = _state.value.copy(
+                    initials = _state.value.initials.ifEmpty { cfg.staffInitials },
+                    hideReason = cfg.hideReason
+                )
+            }
         }
         viewModelScope.launch {
             queryFlow.debounce(150).collect { q ->
@@ -148,8 +157,11 @@ class HomeViewModel(
             val cfg = settings.current()
             val now = Date() // captured at button press — the printed and logged time agree
             val entry = form.student.schedule[form.period]
-            val reason = if (form.reason == "Other") form.customReason.trim().ifEmpty { "Other" }
-            else form.reason
+            val reason = when {
+                cfg.hideReason -> DEFAULT_REASON
+                form.reason == "Other" -> form.customReason.trim().ifEmpty { "Other" }
+                else -> form.reason
+            }
 
             val receipt = PassReceipt(
                 title = cfg.passTitle,

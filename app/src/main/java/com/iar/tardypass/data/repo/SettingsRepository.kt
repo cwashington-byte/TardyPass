@@ -25,6 +25,7 @@ data class AppSettings(
     val hidePeriod: Boolean = false,
     val hideCourse: Boolean = false,
     val hideRoom: Boolean = false,
+    val hideReason: Boolean = false,
     val enableLogging: Boolean = true,
     val passTitle: String = "IAR Tardy Pass",
     val passFooter: String = "Proceed directly to class.",
@@ -43,6 +44,7 @@ class SettingsRepository(private val context: Context) {
         val HIDE_PERIOD = booleanPreferencesKey("hide_period")
         val HIDE_COURSE = booleanPreferencesKey("hide_course")
         val HIDE_ROOM = booleanPreferencesKey("hide_room")
+        val HIDE_REASON = booleanPreferencesKey("hide_reason")
         val ENABLE_LOGGING = booleanPreferencesKey("enable_logging")
         val PASS_TITLE = stringPreferencesKey("pass_title")
         val PASS_FOOTER = stringPreferencesKey("pass_footer")
@@ -61,6 +63,7 @@ class SettingsRepository(private val context: Context) {
             hidePeriod = p[Keys.HIDE_PERIOD] ?: false,
             hideCourse = p[Keys.HIDE_COURSE] ?: false,
             hideRoom = p[Keys.HIDE_ROOM] ?: false,
+            hideReason = p[Keys.HIDE_REASON] ?: false,
             enableLogging = p[Keys.ENABLE_LOGGING] ?: true,
             passTitle = p[Keys.PASS_TITLE] ?: "IAR Tardy Pass",
             passFooter = p[Keys.PASS_FOOTER] ?: "Proceed directly to class.",
@@ -79,6 +82,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setHidePeriod(v: Boolean) = context.dataStore.edit { it[Keys.HIDE_PERIOD] = v }
     suspend fun setHideCourse(v: Boolean) = context.dataStore.edit { it[Keys.HIDE_COURSE] = v }
     suspend fun setHideRoom(v: Boolean) = context.dataStore.edit { it[Keys.HIDE_ROOM] = v }
+    suspend fun setHideReason(v: Boolean) = context.dataStore.edit { it[Keys.HIDE_REASON] = v }
     suspend fun setEnableLogging(v: Boolean) = context.dataStore.edit { it[Keys.ENABLE_LOGGING] = v }
     suspend fun setPassTitle(v: String) = context.dataStore.edit { it[Keys.PASS_TITLE] = v }
     suspend fun setStaffInitials(v: String) = context.dataStore.edit { it[Keys.STAFF_INITIALS] = v }

@@ -24,7 +24,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -38,9 +37,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import com.iar.tardypass.ui.components.ChoiceChip
 import com.iar.tardypass.ui.theme.Green600
 import com.iar.tardypass.ui.theme.Red600
 import java.text.SimpleDateFormat
@@ -51,6 +53,16 @@ import java.util.Locale
 fun HomeScreen(vm: HomeViewModel) {
     val state by vm.state.collectAsState()
     val printerStatus by vm.printerStatus.collectAsState()
+
+    // Once a student is picked the keyboard is just covering the pass form, so
+    // drop focus to dismiss it. Tapping the search field again refocuses and
+    // brings it straight back.
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val dismissKeyboard = {
+        keyboard?.hide()
+        focusManager.clearFocus()
+    }
 
     state.form?.let { form ->
         if (form.pendingDuplicateExcused != null) {
@@ -128,6 +140,7 @@ fun HomeScreen(vm: HomeViewModel) {
                     form = form,
                     initials = state.initials,
                     printing = state.printing,
+                    hideReason = state.hideReason,
                     onInitials = vm::onInitialsChange,
                     onPeriod = vm::onPeriodChange,
                     onReason = vm::onReasonChange,
@@ -143,7 +156,7 @@ fun HomeScreen(vm: HomeViewModel) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { vm.selectStudent(s) },
+                    .clickable { dismissKeyboard(); vm.selectStudent(s) },
                 colors = CardDefaults.cardColors(
                     containerColor = if (selected)
                         MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
@@ -185,6 +198,7 @@ private fun PassFormCard(
     form: PassFormState,
     initials: String,
     printing: Boolean,
+    hideReason: Boolean,
     onInitials: (String) -> Unit,
     onPeriod: (String) -> Unit,
     onReason: (String) -> Unit,
@@ -268,32 +282,26 @@ private fun PassFormCard(
                 }
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                REASONS.take(3).forEach { r ->
-                    FilterChip(
-                        selected = form.reason == r,
-                        onClick = { onReason(r) },
-                        label = { Text(r) }
+            if (!hideReason) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    REASONS.take(3).forEach { r ->
+                        ChoiceChip(selected = form.reason == r, onClick = { onReason(r) }, label = r)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    REASONS.drop(3).forEach { r ->
+                        ChoiceChip(selected = form.reason == r, onClick = { onReason(r) }, label = r)
+                    }
+                }
+                if (form.reason == "Other") {
+                    OutlinedTextField(
+                        value = form.customReason,
+                        onValueChange = onCustomReason,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Reason") },
+                        singleLine = true
                     )
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                REASONS.drop(3).forEach { r ->
-                    FilterChip(
-                        selected = form.reason == r,
-                        onClick = { onReason(r) },
-                        label = { Text(r) }
-                    )
-                }
-            }
-            if (form.reason == "Other") {
-                OutlinedTextField(
-                    value = form.customReason,
-                    onValueChange = onCustomReason,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Reason") },
-                    singleLine = true
-                )
             }
 
             OutlinedTextField(

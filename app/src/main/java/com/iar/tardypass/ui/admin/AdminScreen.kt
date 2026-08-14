@@ -16,7 +16,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -33,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.iar.tardypass.domain.Member
+import com.iar.tardypass.ui.components.ChoiceChip
 import com.iar.tardypass.ui.theme.Red600
 
 @Composable
@@ -96,16 +96,8 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(
-                            selected = role == "staff",
-                            onClick = { role = "staff" },
-                            label = { Text("Staff") }
-                        )
-                        FilterChip(
-                            selected = role == "admin",
-                            onClick = { role = "admin" },
-                            label = { Text("Admin") }
-                        )
+                        ChoiceChip(selected = role == "staff", onClick = { role = "staff" }, label = "Staff")
+                        ChoiceChip(selected = role == "admin", onClick = { role = "admin" }, label = "Admin")
                     }
                     Text(
                         if (role == "admin")
@@ -193,15 +185,15 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
                     }
                     if (!isSelf) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(
+                            ChoiceChip(
                                 selected = member.role == "staff",
                                 onClick = { vm.setRole(member, "staff") },
-                                label = { Text("Staff") }
+                                label = "Staff"
                             )
-                            FilterChip(
+                            ChoiceChip(
                                 selected = member.role == "admin",
                                 onClick = { vm.setRole(member, "admin") },
-                                label = { Text("Admin") }
+                                label = "Admin"
                             )
                             Spacer(Modifier.weight(1f))
                             TextButton(onClick = { pendingRemoval = member }) {

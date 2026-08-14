@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.iar.tardypass.ui.components.ChoiceChip
 import com.iar.tardypass.ui.theme.Green600
 import com.iar.tardypass.ui.theme.Red600
 import kotlinx.coroutines.launch
@@ -82,17 +82,17 @@ fun LogsScreen(vm: LogsViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            FilterChip(selected = todayOnly, onClick = { vm.todayOnly.value = true }, label = { Text("Today") })
-            FilterChip(selected = !todayOnly, onClick = { vm.todayOnly.value = false }, label = { Text("All") })
+            ChoiceChip(selected = todayOnly, onClick = { vm.todayOnly.value = true }, label = "Today")
+            ChoiceChip(selected = !todayOnly, onClick = { vm.todayOnly.value = false }, label = "All")
             Spacer(Modifier.weight(1f))
             if (vm.syncAvailable) {
-                FilterChip(
+                ChoiceChip(
                     selected = logScope == LogScope.SCHOOL,
                     onClick = {
                         vm.scope.value =
                             if (logScope == LogScope.SCHOOL) LogScope.DEVICE else LogScope.SCHOOL
                     },
-                    label = { Text(if (logScope == LogScope.SCHOOL) "All devices" else "This device") }
+                    label = if (logScope == LogScope.SCHOOL) "All devices" else "This device"
                 )
             }
             TextButton(onClick = {

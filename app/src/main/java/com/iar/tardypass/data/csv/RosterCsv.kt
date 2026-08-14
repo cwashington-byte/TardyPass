@@ -27,6 +27,19 @@ object RosterCsv {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+    /**
+     * Header names are compared with punctuation and case stripped, so
+     * "Student_Number", "student number" and "StudentNumber" all match. Keep
+     * this list in sync with the web uploader in public/index.html.
+     */
+    private fun norm(h: String) = h.lowercase().filter { it.isLetterOrDigit() }
+
+    private val ID_ALIASES = listOf("studentnumber", "studentid", "id", "localid", "number", "studentnum")
+    private val FIRST_ALIASES = listOf("firstname", "first", "studentfirstname", "fname")
+    private val LAST_ALIASES = listOf("lastname", "last", "studentlastname", "lname")
+    private val GRADE_ALIASES = listOf("grade", "gradelevel", "gr")
+    private val SCHEDULE_ALIASES = listOf("schedule")
+
     fun parse(text: String): RosterImportResult {
         val rows = try {
             csvReader().readAllWithHeader(text)
@@ -42,12 +55,14 @@ object RosterCsv {
 
         rows.forEachIndexed { i, r ->
             val rowNum = i + 2 // 1-based + header row
-            fun col(vararg names: String): String? =
-                names.firstNotNullOfOrNull { n -> r[n]?.trim()?.takeIf { it.isNotEmpty() } }
+            // Match on normalized header names so any export spelling works.
+            fun col(aliases: List<String>): String? = r.entries
+                .firstOrNull { norm(it.key) in aliases }
+                ?.value?.trim()?.takeIf { it.isNotEmpty() }
 
-            val id = col("Student_Number", "studentId", "id")
-            val first = col("First_Name", "firstName", "first")
-            val last = col("Last_Name", "lastName", "last")
+            val id = col(ID_ALIASES)
+            val first = col(FIRST_ALIASES)
+            val last = col(LAST_ALIASES)
             if (id == null) {
                 // Blank trailing lines are common in SIS exports; only report rows with some content
                 if (r.values.any { it.isNotBlank() }) errors.add(RowError(rowNum, "Missing student number"))
@@ -58,7 +73,7 @@ object RosterCsv {
                 return@forEachIndexed
             }
 
-            val scheduleRaw = col("Schedule", "schedule")
+            val scheduleRaw = col(SCHEDULE_ALIASES)
             val schedule = if (scheduleRaw == null) emptyMap() else try {
                 parseSchedule(scheduleRaw)
             } catch (e: Exception) {
@@ -71,7 +86,7 @@ object RosterCsv {
                     id = id,
                     firstName = first,
                     lastName = last,
-                    grade = col("Grade", "grade"),
+                    grade = col(GRADE_ALIASES),
                     schedule = schedule
                 )
             )

@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -37,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.iar.tardypass.printing.PrinterEncoding
 import com.iar.tardypass.ui.auth.AuthViewModel
+import com.iar.tardypass.ui.components.ChoiceChip
 
 @Composable
 fun SettingsScreen(
@@ -125,10 +125,10 @@ fun SettingsScreen(
         CollapsibleCard("Printer") {
             vm.driverChoices.forEach { (id, name) ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    FilterChip(
+                    ChoiceChip(
                         selected = settings.printerDriverId == id,
                         onClick = { vm.setDriver(id) },
-                        label = { Text(name) }
+                        label = name
                     )
                     Spacer(Modifier.weight(1f))
                     if (id != "auto") {
@@ -155,10 +155,10 @@ fun SettingsScreen(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PrinterEncoding.entries.forEach { e ->
-                    FilterChip(
+                    ChoiceChip(
                         selected = settings.encoding == e,
                         onClick = { vm.setEncoding(e) },
-                        label = { Text(e.name) }
+                        label = e.name
                     )
                 }
             }
@@ -183,6 +183,14 @@ fun SettingsScreen(
             ToggleRow("Hide period", settings.hidePeriod, vm::setHidePeriod)
             ToggleRow("Hide course", settings.hideCourse, vm::setHideCourse)
             ToggleRow("Hide room", settings.hideRoom, vm::setHideRoom)
+            ToggleRow("Hide reason", settings.hideReason, vm::setHideReason)
+            if (settings.hideReason) {
+                Text(
+                    "The reason picker is hidden and every pass is recorded as \"Tardy\".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            }
         }
 
         CollapsibleCard("Records") {

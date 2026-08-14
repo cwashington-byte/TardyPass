@@ -1,3 +1,5 @@
+<!-- Roadmap lives in docs/roadmap.md -->
+
 # H10 Hardware Discovery (Phase 0) — COMPLETE
 
 Discovery run 2026-08-13 against a live device over adb.
