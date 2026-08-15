@@ -76,17 +76,23 @@ service cloud.firestore {
                    || request.resource.data.deviceUid == null);
       }
 
-      // A printer stamps its own uid as the issuing machine and names a real
-      // member — anyone except itself — as the claimed author. Refusing
-      // self-attribution is what stops a pass quietly reading "issued by
-      // Pass Printer 01" when nobody picked a name.
+      function staffPath(schoolId, staffId) {
+        return /databases/$(database)/documents/schools/$(schoolId)/staff/$(staffId);
+      }
+
+      // A printer stamps its own uid as the issuing machine and names someone
+      // from the admin-managed staff list as the claimed author. It must NOT
+      // carry a staffUid: that field means "a real account proved this was
+      // them", which is exactly the guarantee a shared printer cannot make.
       function deviceAttributedPass(schoolId) {
         return request.resource.data.deviceUid == request.auth.uid
-               && request.resource.data.staffUid is string
-               && request.resource.data.staffUid != request.auth.uid
+               && request.resource.data.staffId is string
+               && request.resource.data.staffId.size() > 0
                && request.resource.data.staffName is string
                && request.resource.data.staffName.size() > 0
-               && exists(memberPathFor(schoolId, request.resource.data.staffUid));
+               && exists(staffPath(schoolId, request.resource.data.staffId))
+               && (!('staffUid' in request.resource.data)
+                   || request.resource.data.staffUid == null);
       }
 
       match /members/{uid} {
@@ -117,6 +123,15 @@ service cloud.firestore {
         // Admins revoke; the invitee clears their own once claimed.
         allow delete: if isAdmin(schoolId)
                       || (isSignedIn() && request.auth.token.email.lower() == email);
+      }
+
+      // People who can be credited on a pass. Deliberately NOT accounts: most
+      // staff never sign in anywhere, an admin just types their names. Since
+      // attribution from a shared printer is claimed rather than proven either
+      // way, requiring a Google account per teacher would buy nothing.
+      match /staff/{staffId} {
+        allow read: if isMember(schoolId);
+        allow create, update, delete: if isAdmin(schoolId);
       }
 
       match /students/{studentId} {

@@ -6,6 +6,7 @@ import com.iar.tardypass.data.remote.FirestoreSync
 import com.iar.tardypass.data.repo.AuthRepository
 import com.iar.tardypass.domain.Invite
 import com.iar.tardypass.domain.Member
+import com.iar.tardypass.domain.StaffMember
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,6 +23,23 @@ class AdminViewModel(
 
     val invites: StateFlow<List<Invite>> = sync.observeInvites()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** People creditable on a pass. No account, no sign-in — just a name. */
+    val staffList: StateFlow<List<StaffMember>> = sync.observeStaff()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addStaff(name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        if (staffList.value.any { it.name.equals(clean, ignoreCase = true) }) {
+            message.value = "$clean is already on the staff list"
+            return
+        }
+        run(successMsg = "Added $clean") { sync.addStaff(clean) }
+    }
+
+    fun removeStaff(member: StaffMember) =
+        run(successMsg = "Removed ${member.name}") { sync.removeStaff(member.id) }
 
     val message = MutableStateFlow<String?>(null)
     val busy = MutableStateFlow(false)

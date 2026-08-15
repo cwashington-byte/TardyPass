@@ -14,6 +14,7 @@ import com.iar.tardypass.domain.Invite
 import com.iar.tardypass.domain.Member
 import com.iar.tardypass.domain.Pass
 import com.iar.tardypass.domain.ScheduleEntry
+import com.iar.tardypass.domain.StaffMember
 import com.iar.tardypass.domain.Student
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,7 +102,8 @@ class FirestoreSync(
         staffName: String?,
         studentGrade: String? = null,
         deviceUid: String? = null,
-        deviceName: String? = null
+        deviceName: String? = null,
+        staffId: String? = null
     ): Boolean {
         val doc = schoolDoc()?.collection("passes")?.document() ?: return false
         val data = hashMapOf(
@@ -121,19 +123,23 @@ class FirestoreSync(
             "room" to pass.room,
             "reason" to pass.reason,
             "excused" to pass.excused,
-            "staffUid" to staffUid,
             "staffName" to staffName,
             "staffInitials" to pass.staffInitials,
             "printDriver" to pass.printDriver,
             "printConfirmed" to pass.printConfirmed,
             "schoolYear" to currentSchoolYear()
         )
-        // Added only in device mode. Firestore writes an explicit null for a key
-        // set to null, and the rules treat a present deviceUid as "this claims to
-        // be a printer" — so a personal pass must omit these keys entirely.
+        // These two are mutually exclusive and the rules enforce it: staffUid
+        // means an account proved who this was, staffId means a name was picked
+        // off the staff list on a shared printer. Firestore writes an explicit
+        // null for a key set to null, and the rules read a *present* key as the
+        // claim being made — so each is omitted entirely when it doesn't apply.
         if (deviceUid != null) {
             data["deviceUid"] = deviceUid
             data["deviceName"] = deviceName
+            if (staffId != null) data["staffId"] = staffId
+        } else if (staffUid != null) {
+            data["staffUid"] = staffUid
         }
         doc.set(data)
             .addOnFailureListener { e ->
@@ -184,6 +190,7 @@ class FirestoreSync(
         reason = getString("reason"),
         staffInitials = getString("staffInitials"),
         staffUid = getString("staffUid"),
+        staffId = getString("staffId"),
         staffName = getString("staffName"),
         excused = getBoolean("excused") ?: false,
         printDriver = getString("printDriver") ?: "",
@@ -191,7 +198,44 @@ class FirestoreSync(
         deviceName = getString("deviceName")
     )
 
-    // ---- Staff administration ----------------------------------------------
+    // ---- Staff list (people creditable on a pass, no account required) ------
+
+    fun observeStaff(): Flow<List<StaffMember>> = callbackFlow {
+        val school = schoolDoc()
+        if (school == null) { trySend(emptyList()); close(); return@callbackFlow }
+        val reg = school.collection("staff").addSnapshotListener { snap, err ->
+            if (err != null) {
+                _status.value = _status.value.copy(lastError = err.message)
+                return@addSnapshotListener
+            }
+            trySend(
+                snap?.documents.orEmpty()
+                    .mapNotNull { d ->
+                        val name = d.getString("name")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                        StaffMember(id = d.id, name = name)
+                    }
+                    .sortedBy { it.name.lowercase() }
+            )
+        }
+        awaitClose { reg.remove() }
+    }
+
+    suspend fun addStaff(name: String): Result<Unit> {
+        val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
+        return runCatching {
+            school.collection("staff").add(
+                hashMapOf("name" to name.trim(), "createdAt" to FieldValue.serverTimestamp())
+            ).await()
+            Unit
+        }
+    }
+
+    suspend fun removeStaff(staffId: String): Result<Unit> {
+        val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
+        return runCatching { school.collection("staff").document(staffId).delete().await() }
+    }
+
+    // ---- Accounts (who can sign in) ----------------------------------------
 
     fun observeMembers(): Flow<List<Member>> = callbackFlow {
         val school = schoolDoc()

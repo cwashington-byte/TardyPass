@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.iar.tardypass.domain.Member
+import com.iar.tardypass.domain.StaffMember
 import com.iar.tardypass.ui.components.ChoiceChip
 import com.iar.tardypass.ui.theme.Red600
 
@@ -65,8 +66,32 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
     val message by vm.message.collectAsState()
     val busy by vm.busy.collectAsState()
 
+    val staffList by vm.staffList.collectAsState()
     var email by remember { mutableStateOf("") }
+    var staffName by remember { mutableStateOf("") }
     var role by remember { mutableStateOf("staff") }
+    var pendingStaffRemoval by remember { mutableStateOf<StaffMember?>(null) }
+
+    pendingStaffRemoval?.let { person ->
+        AlertDialog(
+            onDismissRequest = { pendingStaffRemoval = null },
+            title = { Text("Remove ${person.name}?") },
+            text = {
+                Text(
+                    "They'll no longer appear in the picker on shared printers. " +
+                        "Passes already issued in their name are kept."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.removeStaff(person); pendingStaffRemoval = null }) {
+                    Text("Remove", color = Red600)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingStaffRemoval = null }) { Text("Cancel") }
+            }
+        )
+    }
     var pendingRemoval by remember { mutableStateOf<Member?>(null) }
     var pendingDeviceConversion by remember { mutableStateOf<Member?>(null) }
 
@@ -123,6 +148,72 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Manage staff", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 TextButton(onClick = onBack) { Text("Done") }
+            }
+        }
+
+        // The staff list comes first because it's what most schools touch: these
+        // are the people credited on passes, and none of them need an account.
+        item(key = "stafflist") {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Staff list", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Everyone who can be credited on a pass. No Google account or " +
+                            "sign-in needed — these names appear in the picker on shared printers.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = staffName,
+                            onValueChange = { staffName = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Full name") },
+                            singleLine = true
+                        )
+                        Button(
+                            onClick = { vm.addStaff(staffName); staffName = "" },
+                            enabled = !busy && staffName.isNotBlank(),
+                            modifier = Modifier.height(56.dp)
+                        ) { Text("Add") }
+                    }
+                }
+            }
+        }
+
+        items(staffList, key = { "staff-${it.id}" }) { person ->
+            Card(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        person.initials.ifEmpty { "?" },
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                    Text(person.name, Modifier.weight(1f))
+                    TextButton(onClick = { pendingStaffRemoval = person }) {
+                        Text("Remove", color = Red600)
+                    }
+                }
+            }
+        }
+
+        item(key = "accounts-h") {
+            Column(Modifier.padding(top = 16.dp)) {
+                Text("Accounts", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Separate from the staff list: only people who need to sign in — " +
+                        "admins, the attendance clerk — and the printers themselves.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
             }
         }
 

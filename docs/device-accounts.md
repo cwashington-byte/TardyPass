@@ -116,13 +116,37 @@ the network), but it can no longer read the roster or sync anything.
 - If the staff list can't be loaded, the picker says so and falls back to typed
   initials — the pass is then recorded on the device only.
 
+## Two separate lists
+
+This trips people up, so it's worth stating plainly.
+
+**Staff list** (`/schools/{id}/staff`) — everyone who can be *credited* on a pass.
+No Google account, no sign-in, no licence. An admin types the names under
+Settings → Administration → Staff list, and they appear in the picker on every
+printer within seconds. This is where almost all your teachers belong.
+
+**Accounts** (`/schools/{id}/members`) — only people who actually *sign in*:
+admins, whoever uses the attendance dashboard, and the printers themselves. Each
+needs a real Workspace account.
+
+A teacher who only ever issues passes on a hallway printer needs **no account at
+all**. Add them to the staff list and you're done.
+
+Why the split: attribution from a shared printer is claimed rather than proven no
+matter what, so requiring a Google account per teacher would have bought nothing
+while adding an account and a sign-in step per person.
+
 ## Roles
 
 | Role | Roster | Passes | Manage staff | Dashboard |
 |---|---|---|---|---|
-| `admin` | read + import | own only | yes | yes, with upload |
-| `staff` | read | own only | no | yes |
-| `device` | read | any member, stamped with the device | no | blocked |
+| `admin` | read + import | own only, proven | yes | yes, with upload |
+| `staff` | read | own only, proven | no | yes |
+| `device` | read | anyone on the staff list, claimed | no | blocked |
 
 A device can never be an admin — role is a single string, and member documents are
 admin-writable only, so a printer can't promote itself.
+
+The two attribution fields on a pass are mutually exclusive, and the rules enforce
+it: `staffUid` means an account proved the author's identity; `staffId` means a
+name was picked off the staff list. A device pass may never carry `staffUid`.

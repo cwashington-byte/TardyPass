@@ -36,7 +36,10 @@ data class Pass(
     val room: String,
     val reason: String?,
     val staffInitials: String?,
-    val staffUid: String? = null, // Phase 2: authenticated staff
+    /** Set only when a real signed-in account issued this — proven identity. */
+    val staffUid: String? = null,
+    /** Set only when picked from the staff list on a shared printer — claimed. */
+    val staffId: String? = null,
     val staffName: String? = null,
     val excused: Boolean,
     val printDriver: String,
@@ -62,6 +65,17 @@ data class Member(
     val isDevice: Boolean get() = role == "device"
 
     val initials: String get() = initialsFrom(displayName)
+}
+
+/**
+ * Someone who can be credited on a pass. Admin-managed and account-free — most
+ * staff never sign in anywhere, so this is just a name an admin typed.
+ */
+data class StaffMember(
+    val id: String,
+    val name: String
+) {
+    val initials: String get() = initialsFrom(name)
 }
 
 /** A staff member invited by email who hasn't signed in yet. */

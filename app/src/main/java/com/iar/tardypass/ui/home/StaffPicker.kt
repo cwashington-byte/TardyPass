@@ -32,7 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.iar.tardypass.domain.Member
+import com.iar.tardypass.domain.StaffMember
 import com.iar.tardypass.ui.theme.Red600
 
 /**
@@ -112,9 +112,9 @@ private fun InitialsBadge(initials: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StaffPickerSheet(
-    choices: List<Member>,
+    choices: List<StaffMember>,
     hasSelection: Boolean,
-    onSelect: (Member) -> Unit,
+    onSelect: (StaffMember) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -127,8 +127,9 @@ fun StaffPickerSheet(
 
             if (choices.isEmpty()) {
                 Text(
-                    "Can't load the staff list — type your initials on the pass instead. " +
-                        "The pass will be saved on this device only.",
+                    "No staff list yet. An administrator adds names under " +
+                        "Settings → Administration → Staff list. Until then you can type " +
+                        "initials on the pass, which saves it on this device only.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     modifier = Modifier.padding(vertical = 16.dp)
@@ -159,14 +160,14 @@ fun StaffPickerSheet(
             }
 
             val visible = choices
-                .filter { filter.isBlank() || it.displayName.contains(filter.trim(), ignoreCase = true) }
-                .sortedBy { it.displayName.lowercase() }
+                .filter { filter.isBlank() || it.name.contains(filter.trim(), ignoreCase = true) }
+                .sortedBy { it.name.lowercase() }
 
             LazyColumn(
                 Modifier.heightIn(max = 520.dp),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                items(visible, key = { it.uid }) { member ->
+                items(visible, key = { it.id }) { member ->
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -175,14 +176,11 @@ fun StaffPickerSheet(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         InitialsBadge(member.initials)
-                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                            Text(member.displayName, fontWeight = FontWeight.Medium)
-                            Text(
-                                member.email,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
+                        Text(
+                            member.name,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f).padding(start = 12.dp)
+                        )
                     }
                 }
                 if (visible.isEmpty()) {
