@@ -38,19 +38,31 @@ Still to do:
 
 ### Other Phase 3 items
 
-- Reprint from the log (paper jams).
-- Bell schedule table, so the current period is preselected and the receipt can
-  show minutes late.
+- ~~Reprint from the log (paper jams).~~ **Done.**
+- ~~Bell schedule table, so the current period is preselected and the receipt can
+  show minutes late.~~ **Done** — admin enters times on the dashboard; the app
+  reads them read-only. Optional by construction: an unconfigured schedule leaves
+  preselection and the minutes-late line exactly as they were.
 - Repeat-tardy threshold alert (the per-student counter already exists).
-- **Kiosk / screen-pinning mode for shared hallway devices.** This became a
-  security control rather than polish when printers moved to shared device
-  accounts (`docs/device-accounts.md`): screen pinning is what stops someone
-  wandering out of the app on a device that is permanently signed in.
+- **Kiosk / screen-pinning mode for shared hallway devices.** *Correction to an
+  earlier note in this file:* this is **not** protecting the Workspace account.
+  With the printer's OU stripped of Gmail and Drive per `docs/device-accounts.md`,
+  the account holds nothing, so leaving the app reveals nothing. What kiosk
+  actually buys is device-tampering hygiene — mainly stopping someone changing
+  the system clock, which would falsify pass timestamps since `localCreatedAt` is
+  the device's own clock. The planned clock-skew warning covers that more
+  directly. De-prioritised accordingly.
 - Sideload update channel: GitHub Releases + an in-app version check.
 
 ## Phase 4 — SIS integration
 
-Requirement: morning tardies must reach PowerSchool by the end of first period.
+**Next up: inbound roster sync only** (PowerSchool → TardyPass). Chris can install
+plugins himself, which removes the district-approval lead time. See the approved
+plan for the plugin XML, the "never filter the fetch to active students" rule,
+and the guard set.
+
+Requirement for tardies: morning ones must reach PowerSchool by the end of first
+period — currently met by the clerk working from the live dashboard.
 
 Sequenced by risk, lowest first:
 
@@ -58,11 +70,19 @@ Sequenced by risk, lowest first:
 2. **Generated import file** — produce a PowerSchool-shaped attendance file that
    a human reviews and imports. Keeps a person between the app and official
    attendance records.
-3. **Direct API write** — a scheduled Cloud Function posts attendance via a
-   PowerSchool plugin. Needs district approval and write permissions; a bug here
-   corrupts records that feed state reporting, so it should only follow a term
-   of clean operation. Each pass needs a `postedToSis` marker so repeated runs
-   can't double-post.
+3. **Direct API write — NOT PLANNED.** Explicitly out of scope for the
+   foreseeable future by the school's decision. A bug here corrupts records that
+   feed state reporting, and the clerk working from the live dashboard is
+   sufficient today. Kept here only so the reasoning isn't relitigated: if it is
+   ever revisited it needs district approval, write permissions, and a
+   `postedToSis` marker so repeated runs can't double-post.
+
+**Roster lifecycle** — students are never deleted; culling marks them
+`active: false` (enforced by rule, not convention, since passes reference
+`studentId`). The dashboard's "complete roster" upload deactivates anyone absent
+from the file, guarded at 40% of the active roster because that is what a partial
+export looks like. Once PowerSchool sync lands, enrollment status drives `active`
+automatically and the manual cull becomes an emergency tool rather than routine.
 
 Cost is not the constraint: Cloud Scheduler bills per job (~$0.10/month), not
 per run, and the compute fits inside the free allowances many times over. Blaze
