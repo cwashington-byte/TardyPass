@@ -89,35 +89,105 @@ Do all of this before touching the device. **Order matters at step 6.**
 7. **One account per printer, never shared.** `deviceUid` can't tell two printers
    apart if they share an account, and one compromise would cost you all of them.
 
-## Installing and updating the app on a printer
+## Setting up a brand-new printer
 
-Today this is `adb` over USB. It's fine for a handful of devices; the automated
-path is described at the end of this section.
+Do the steps in this order. Step 1 before step 4 especially — reversed, the
+printer signs in, finds no member document, and sits showing sync errors.
 
-**One-time on each printer:** Settings → About → tap *Build number* seven times →
-back → Developer options → enable **USB debugging**. Connect USB and accept the
-authorisation prompt on the device.
+### 1. Grant the printer access, from a device that's already an admin
 
-**Install or update** (same command either way — `-r` replaces in place and keeps
-the app's data, sign-in and local pass history):
+Manage staff lives in the app, not the dashboard, so you need TardyPass open
+somewhere you're signed in as an admin — an existing printer, or the app on your
+own phone. Settings → Administration → Manage staff → enter the new printer's
+address (`passprinter02@…`), choose **Device**, Grant access.
 
-```
+*(If this is the very first device and there's nowhere to do that from, create the
+member document by hand in the Firebase console — see the bootstrap note at the
+top of this file.)*
+
+### 2. Create the Workspace account
+
+Per "Setting up a printer" above: its own account, in the stripped OU, named for
+its physical location.
+
+### 3. Install the app
+
+Two routes, depending on what the laptop has.
+
+#### Route A — the laptop has `adb`
+
+On the printer: Settings → About phone → tap **Build number** seven times → back →
+System → Developer options → enable **USB debugging**. Connect USB and accept the
+"Allow USB debugging?" prompt on the device.
+
+```bash
 adb install -r app-release.apk
 ```
 
-Two things that will bite if ignored:
+`-r` replaces in place, keeping sign-in and local pass history. Use it for updates
+too — there's no need to uninstall first, and uninstalling would discard any
+passes that hadn't synced yet.
+
+#### Route B — the laptop has only the APK, no tooling
+
+No adb, nothing to install on the laptop. The H10 ships with **Files by Google**,
+which is all you need.
+
+1. Connect the printer by USB.
+2. On the **printer**, swipe down and tap the *"Charging this device via USB"*
+   notification → choose **File Transfer**. (Windows won't show the device's
+   storage until you do this — if the device appears with no folders inside, this
+   is the step that was missed.)
+3. On the laptop, open the device in Explorer → *Internal shared storage* →
+   **Download**, and copy `app-release.apk` in.
+4. On the printer, open **Files** → Downloads → tap `app-release.apk`.
+5. Android will say Files isn't allowed to install unknown apps. Tap **Settings**,
+   turn on *Allow from this source*, then press back. This is per-app and one-time.
+6. Tap **Install**, then **Open**.
+
+Any transfer method works for step 3 — a USB stick, or a network share. Note that
+**Gmail and Drive won't work for this on a configured printer**: the runbook turns
+those services off for the device OU, which is the whole point of that OU.
+
+### 4. Sign the printer in
+
+Open TardyPass → Settings → Sign in with Google → pick the printer's account. It
+claims the grant from step 1 and provisions itself as a device. The account card
+should then read *"This is a shared printer"* and the roster sync dot should go
+green.
+
+### 5. Check it actually prints
+
+Settings → Printer → the **Built-in printer (SENRAISE)** row should say
+*available* → tap **Test**. Paper should come out. If the row says *not found*,
+the vendor print service is missing or disabled on that unit — see the AIDL
+section above.
+
+Then on the Pass screen: the red *"Tap to choose your name"* bar should be
+showing, which confirms the device role took effect.
+
+## Updating an existing printer
+
+Same command, or the same Files procedure:
+
+```bash
+adb install -r app-release.apk
+```
+
+Three things that will bite if ignored:
 
 - **Always install the RELEASE build, never debug.** Measured on an H10: 4,780 ms
   cold start for debug versus 635 ms for release. A debug build feels broken on
   this hardware.
 - **Always sign with the same keystore** (`C:\Users\Chris\TardyPass\secrets\`).
   Android refuses to replace an app with a differently-signed one, so a lost or
-  changed key means uninstalling every printer — which also wipes local pass
-  history. Back that folder up.
-
-If `adb install` fails with a signature mismatch, the build was signed with a
-different key. Don't reach for `adb uninstall` reflexively: confirm the key first,
-because uninstalling discards any passes on that device that hadn't synced.
+  changed key means uninstalling every printer — which also discards unsynced
+  passes. Back that folder up. If an install fails with a signature mismatch,
+  check the key before reaching for `adb uninstall`.
+- **Bump `versionCode`** in `app/build.gradle.kts` for each release you actually
+  distribute. `adb install -r` doesn't care, but without it there's no way to tell
+  which build a printer is running, and the automated update channel below has
+  nothing to compare against.
 
 **The automated path, when it's wanted:** the APK goes to Cloud Storage rather
 than Hosting — Hosting serves everything publicly, whereas a Storage rule can
