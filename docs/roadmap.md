@@ -52,7 +52,18 @@ Still to do:
   the system clock, which would falsify pass timestamps since `localCreatedAt` is
   the device's own clock. The planned clock-skew warning covers that more
   directly. De-prioritised accordingly.
-- Sideload update channel: GitHub Releases + an in-app version check.
+- **Sideload update channel.** Decided design: the APK goes to Cloud Storage
+  (not Hosting — Hosting is public with no access control), gated by a Storage
+  rule requiring a `members/{uid}` document, with the version advertised in
+  `/schools/{id}/config/appVersion` and installed via the package installer.
+  Requires **Blaze**: projects created after October 2024 cannot provision a
+  Storage bucket on Spark. Deferred until Blaze is enabled for the SIS sync;
+  `adb install -r` is the interim path, documented in `device-accounts.md`.
+- **Custom dashboard domain**: `passes.invictusofrichmond.org`. Free on Hosting,
+  needs DNS records. Worth doing because staff are asked to enter Google
+  credentials there and a project-id `.web.app` URL looks like phishing. The
+  domain must also be added to Firebase Auth's authorized domains or sign-in
+  fails on it.
 
 ## Phase 4 — SIS integration
 

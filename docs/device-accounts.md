@@ -89,6 +89,45 @@ Do all of this before touching the device. **Order matters at step 6.**
 7. **One account per printer, never shared.** `deviceUid` can't tell two printers
    apart if they share an account, and one compromise would cost you all of them.
 
+## Installing and updating the app on a printer
+
+Today this is `adb` over USB. It's fine for a handful of devices; the automated
+path is described at the end of this section.
+
+**One-time on each printer:** Settings → About → tap *Build number* seven times →
+back → Developer options → enable **USB debugging**. Connect USB and accept the
+authorisation prompt on the device.
+
+**Install or update** (same command either way — `-r` replaces in place and keeps
+the app's data, sign-in and local pass history):
+
+```
+adb install -r app-release.apk
+```
+
+Two things that will bite if ignored:
+
+- **Always install the RELEASE build, never debug.** Measured on an H10: 4,780 ms
+  cold start for debug versus 635 ms for release. A debug build feels broken on
+  this hardware.
+- **Always sign with the same keystore** (`C:\Users\Chris\TardyPass\secrets\`).
+  Android refuses to replace an app with a differently-signed one, so a lost or
+  changed key means uninstalling every printer — which also wipes local pass
+  history. Back that folder up.
+
+If `adb install` fails with a signature mismatch, the build was signed with a
+different key. Don't reach for `adb uninstall` reflexively: confirm the key first,
+because uninstalling discards any passes on that device that hadn't synced.
+
+**The automated path, when it's wanted:** the APK goes to Cloud Storage rather
+than Hosting — Hosting serves everything publicly, whereas a Storage rule can
+require a `members/{uid}` document, so only a provisioned device can download it.
+The app fetches it through the authenticated SDK and hands it to Android's package
+installer, with the version advertised in `/schools/{id}/config/appVersion`. This
+needs the **Blaze** plan, because projects created after October 2024 can't
+provision a Storage bucket on Spark. Deferred until Blaze is enabled for the
+PowerSchool sync.
+
 ## If a printer is lost or stolen
 
 **Settings → Administration → Manage staff → Remove** that device.
