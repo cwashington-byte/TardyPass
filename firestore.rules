@@ -125,6 +125,12 @@ service cloud.firestore {
                       || (isSignedIn() && request.auth.token.email.lower() == email);
       }
 
+      // School-level configuration: bell schedule now, SIS settings later.
+      match /config/{docId} {
+        allow read: if isMember(schoolId);
+        allow write: if isAdmin(schoolId);
+      }
+
       // People who can be credited on a pass. Deliberately NOT accounts: most
       // staff never sign in anywhere, an admin just types their names. Since
       // attribution from a shared printer is claimed rather than proven either

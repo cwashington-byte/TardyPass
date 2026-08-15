@@ -44,6 +44,8 @@ data class Pass(
     val excused: Boolean,
     val printDriver: String,
     val printConfirmed: Boolean,
+    /** Minutes past the period bell. Cloud-only, like [deviceName]. */
+    val minutesLate: Int? = null,
     /**
      * Which shared printer issued this, when it came from a device account.
      * Cloud-only — deliberately not persisted to Room, so adding it needs no
@@ -117,6 +119,7 @@ data class PassReceipt(
     val reason: String? = null,
     val staff: String? = null,
     val status: String? = null,
+    val minutesLate: Int? = null,
     /** Banner under the title, e.g. "*** REPRINT ***". Null on a normal pass. */
     val notice: String? = null,
     val noticeDetail: String? = null,

@@ -68,11 +68,15 @@ class AppContainer(app: Application) {
             }
             // Restore listeners for a session that persisted across app restarts,
             // and pick up access granted since the last launch.
+            sync.onBellSchedule = { rawJson ->
+                appScope.launch { settings.setBellScheduleJson(rawJson) }
+            }
             auth.currentUser.value?.let { user ->
                 if (BuildConfig.FIREBASE_CONFIGURED) {
                     sync.claimInviteIfPresent(user.uid, user.email, user.displayName)
                     sync.startRosterListener()
                     sync.startMemberListener(user.uid)
+                    sync.startBellScheduleListener()
                 }
             }
         }

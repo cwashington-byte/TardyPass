@@ -170,7 +170,7 @@
       <thead>
         <tr>
           <th>Time</th><th>Student</th><th>ID</th><th>Gr</th>
-          <th>Period</th><th>Reason</th><th>Status</th>
+          <th>Period</th><th>Reason</th><th>Late</th><th>Status</th>
           <th title="Names on passes from a shared printer are self-reported by whoever was at the printer.">Issued by</th>
           <th>Device</th>
         </tr>
@@ -211,6 +211,26 @@
         <button id="cancelImport">Cancel</button>
       </div>
       <p class="small" id="importStatus"></p>
+    </section>
+
+    <!-- Admin-only. Period names must match the keys in student schedules, so the
+         editor checks them against the roster rather than letting the feature
+         silently do nothing. -->
+    <section id="bellCard" class="roster" hidden>
+      <h3>Bell schedule</h3>
+      <p class="small muted">
+        Used to preselect the period a student is arriving for and to print how
+        many minutes late they are. Leave it empty and neither happens — the app
+        behaves exactly as it does without a schedule.
+      </p>
+      <table id="bellTable" style="margin:10px 0">
+        <thead><tr><th>Period</th><th>Starts</th><th>Ends</th><th></th></tr></thead>
+        <tbody id="bellRows"></tbody>
+      </table>
+      <div id="bellWarn" class="small" style="color:var(--amber)" hidden></div>
+      <button id="bellAdd">Add period</button>
+      <button class="primary" id="bellSave">Save schedule</button>
+      <p class="small" id="bellStatus"></p>
     </section>
   </div>
 </main>
@@ -323,7 +343,8 @@ onAuthStateChanged(auth, async (user) => {
   // Upload is admin-only. Hiding it is convenience — the Firestore rules reject
   // student writes from non-admins regardless of what the page shows.
   $("rosterCard").hidden = !isAdmin;
-  if (isAdmin) countRoster();
+  $("bellCard").hidden = !isAdmin;
+  if (isAdmin) { countRoster(); loadBell(); }
 
   if (!isMember) {
     $("noAccess").hidden = false;
@@ -372,7 +393,8 @@ function subscribe() {
         reason: v.reason || "",
         excused: !!v.excused,
         staff: v.staffName || v.staffInitials || "",
-        device: v.deviceName || ""
+        device: v.deviceName || "",
+        late: (v.minutesLate ?? "") === "" ? "" : String(v.minutesLate)
       };
     });
     $("dot").className = "dot";
@@ -411,6 +433,7 @@ function render() {
       ["num", r.grade],
       ["", r.period],
       ["", r.reason],
+      ["num", r.late],
       ["tag", r.excused ? "EXCUSED" : "UNEXCUSED"],
       ["", r.staff],
       ["", r.device]
@@ -440,14 +463,14 @@ function render() {
 // ---- clerk helpers -------------------------------------------------------
 
 function tsv() {
-  const head = ["Student_Number","Last_Name","First_Name","Date","Time","Period","Reason","Status","Issued_By","Issued_On_Device"];
+  const head = ["Student_Number","Last_Name","First_Name","Date","Time","Period","Reason","Minutes_Late","Status","Issued_By","Issued_On_Device"];
   const lines = [head.join("\t")];
   for (const r of filtered()) {
     const d = new Date(r.t);
     lines.push([
       r.sid, r.last, r.first,
       d.toLocaleDateString(), fmtTime(r.t),
-      r.period, r.reason, r.excused ? "Excused" : "Unexcused", r.staff, r.device
+      r.period, r.reason, r.late, r.excused ? "Excused" : "Unexcused", r.staff, r.device
     ].join("\t"));
   }
   return lines.join("\n");
@@ -740,9 +763,195 @@ async function countRoster() {
   }
 }
 
+// ---- bell schedule editor (admin only) -----------------------------------
+
+let bellPeriods = [];
+
+function renderBell() {
+  const tb = $("bellRows");
+  tb.innerHTML = "";
+  bellPeriods.forEach((p, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td><input value="${escapeHtml(p.name)}" data-i="${i}" data-k="name" style="width:90px"></td>` +
+      `<td><input type="time" value="${p.start || ""}" data-i="${i}" data-k="start"></td>` +
+      `<td><input type="time" value="${p.end || ""}" data-i="${i}" data-k="end"></td>` +
+      `<td><button data-del="${i}">Remove</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll("input").forEach((el) => {
+    el.oninput = (e) => {
+      bellPeriods[+e.target.dataset.i][e.target.dataset.k] = e.target.value;
+      checkBellNames();
+    };
+  });
+  tb.querySelectorAll("button[data-del]").forEach((el) => {
+    el.onclick = (e) => { bellPeriods.splice(+e.target.dataset.del, 1); renderBell(); };
+  });
+  checkBellNames();
+}
+
+/**
+ * "Period 1" vs "P1" is the single most likely way this feature silently does
+ * nothing, so compare against the period keys actually present in the roster.
+ */
+async function checkBellNames() {
+  const warn = $("bellWarn");
+  const named = bellPeriods.map((p) => p.name).filter(Boolean);
+  if (!named.length) { warn.hidden = true; return; }
+  try {
+    const { getDocs, query: q4, limit: l4, collection: c4 } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+    const snap = await getDocs(q4(c4(db, "schools", SCHOOL_ID, "students"), l4(50)));
+    const keys = new Set();
+    snap.forEach((d) => Object.keys(d.data().schedule || {}).forEach((k) => keys.add(k)));
+    if (!keys.size) { warn.hidden = true; return; }
+    const unmatched = named.filter((n) => ![...keys].some((k) => k.toLowerCase() === n.toLowerCase()));
+    warn.hidden = unmatched.length === 0;
+    warn.textContent = unmatched.length
+      ? `No student has a period called ${unmatched.map((u) => `"${u}"`).join(", ")}. ` +
+        `Roster schedules use: ${[...keys].sort().join(", ")}.`
+      : "";
+  } catch { warn.hidden = true; }
+}
+
+async function loadBell() {
+  try {
+    const { getDoc, doc: d5 } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+    const snap = await getDoc(d5(db, "schools", SCHOOL_ID, "config", "bellSchedule"));
+    bellPeriods = snap.exists() ? (snap.data().periods || []) : [];
+  } catch { bellPeriods = []; }
+  if (!bellPeriods.length) {
+    bellPeriods = ["P1", "P2", "P3", "P4", "P5", "P6"].map((n) => ({ name: n, start: "", end: "" }));
+  }
+  renderBell();
+}
+
+$("bellAdd").onclick = () => {
+  bellPeriods.push({ name: `P${bellPeriods.length + 1}`, start: "", end: "" });
+  renderBell();
+};
+
+$("bellSave").onclick = async () => {
+  const { setDoc, doc: d6, serverTimestamp } =
+    await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+  // Blank rows are dropped rather than saved half-filled, so a period is either
+  // usable or absent — never present with an unparsable time.
+  const periods = bellPeriods
+    .map((p) => ({ name: (p.name || "").trim(), start: p.start || "", end: p.end || "" }))
+    .filter((p) => p.name && p.start && p.end);
+  $("bellStatus").style.color = "";
+  try {
+    await setDoc(
+      d6(db, "schools", SCHOOL_ID, "config", "bellSchedule"),
+      { periods, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, updatedAt: serverTimestamp() }
+    );
+    $("bellStatus").textContent = periods.length
+      ? `Saved ${periods.length} period(s). Every printer updates automatically.`
+      : "Saved with no periods — preselection and minutes-late are off.";
+  } catch (err) {
+    $("bellStatus").style.color = "var(--red)";
+    $("bellStatus").textContent = `Save failed: ${err.message}`;
+  }
+};
+
 $("date").value = ymd(new Date());
 $("date").onchange = subscribe;
-$("today").onclick = () => { $("date").value = ymd(new Date()); subscribe(); };
+$("today").onclick = () => { // ---- bell schedule editor (admin only) -----------------------------------
+
+let bellPeriods = [];
+
+function renderBell() {
+  const tb = $("bellRows");
+  tb.innerHTML = "";
+  bellPeriods.forEach((p, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td><input value="${escapeHtml(p.name)}" data-i="${i}" data-k="name" style="width:90px"></td>` +
+      `<td><input type="time" value="${p.start || ""}" data-i="${i}" data-k="start"></td>` +
+      `<td><input type="time" value="${p.end || ""}" data-i="${i}" data-k="end"></td>` +
+      `<td><button data-del="${i}">Remove</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll("input").forEach((el) => {
+    el.oninput = (e) => {
+      bellPeriods[+e.target.dataset.i][e.target.dataset.k] = e.target.value;
+      checkBellNames();
+    };
+  });
+  tb.querySelectorAll("button[data-del]").forEach((el) => {
+    el.onclick = (e) => { bellPeriods.splice(+e.target.dataset.del, 1); renderBell(); };
+  });
+  checkBellNames();
+}
+
+/**
+ * "Period 1" vs "P1" is the single most likely way this feature silently does
+ * nothing, so compare against the period keys actually present in the roster.
+ */
+async function checkBellNames() {
+  const warn = $("bellWarn");
+  const named = bellPeriods.map((p) => p.name).filter(Boolean);
+  if (!named.length) { warn.hidden = true; return; }
+  try {
+    const { getDocs, query: q4, limit: l4, collection: c4 } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+    const snap = await getDocs(q4(c4(db, "schools", SCHOOL_ID, "students"), l4(50)));
+    const keys = new Set();
+    snap.forEach((d) => Object.keys(d.data().schedule || {}).forEach((k) => keys.add(k)));
+    if (!keys.size) { warn.hidden = true; return; }
+    const unmatched = named.filter((n) => ![...keys].some((k) => k.toLowerCase() === n.toLowerCase()));
+    warn.hidden = unmatched.length === 0;
+    warn.textContent = unmatched.length
+      ? `No student has a period called ${unmatched.map((u) => `"${u}"`).join(", ")}. ` +
+        `Roster schedules use: ${[...keys].sort().join(", ")}.`
+      : "";
+  } catch { warn.hidden = true; }
+}
+
+async function loadBell() {
+  try {
+    const { getDoc, doc: d5 } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+    const snap = await getDoc(d5(db, "schools", SCHOOL_ID, "config", "bellSchedule"));
+    bellPeriods = snap.exists() ? (snap.data().periods || []) : [];
+  } catch { bellPeriods = []; }
+  if (!bellPeriods.length) {
+    bellPeriods = ["P1", "P2", "P3", "P4", "P5", "P6"].map((n) => ({ name: n, start: "", end: "" }));
+  }
+  renderBell();
+}
+
+$("bellAdd").onclick = () => {
+  bellPeriods.push({ name: `P${bellPeriods.length + 1}`, start: "", end: "" });
+  renderBell();
+};
+
+$("bellSave").onclick = async () => {
+  const { setDoc, doc: d6, serverTimestamp } =
+    await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+  // Blank rows are dropped rather than saved half-filled, so a period is either
+  // usable or absent — never present with an unparsable time.
+  const periods = bellPeriods
+    .map((p) => ({ name: (p.name || "").trim(), start: p.start || "", end: p.end || "" }))
+    .filter((p) => p.name && p.start && p.end);
+  $("bellStatus").style.color = "";
+  try {
+    await setDoc(
+      d6(db, "schools", SCHOOL_ID, "config", "bellSchedule"),
+      { periods, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, updatedAt: serverTimestamp() }
+    );
+    $("bellStatus").textContent = periods.length
+      ? `Saved ${periods.length} period(s). Every printer updates automatically.`
+      : "Saved with no periods — preselection and minutes-late are off.";
+  } catch (err) {
+    $("bellStatus").style.color = "var(--red)";
+    $("bellStatus").textContent = `Save failed: ${err.message}`;
+  }
+};
+
+$("date").value = ymd(new Date()); subscribe(); };
 $("status").onchange = render;
 $("q").oninput = render;
 
@@ -750,7 +959,100 @@ $("q").oninput = render;
 // when the tab is refocused on a new day.
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && $("date").value === ymd(new Date(Date.now() - 86400000))) {
-    $("date").value = ymd(new Date());
+    // ---- bell schedule editor (admin only) -----------------------------------
+
+let bellPeriods = [];
+
+function renderBell() {
+  const tb = $("bellRows");
+  tb.innerHTML = "";
+  bellPeriods.forEach((p, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      `<td><input value="${escapeHtml(p.name)}" data-i="${i}" data-k="name" style="width:90px"></td>` +
+      `<td><input type="time" value="${p.start || ""}" data-i="${i}" data-k="start"></td>` +
+      `<td><input type="time" value="${p.end || ""}" data-i="${i}" data-k="end"></td>` +
+      `<td><button data-del="${i}">Remove</button></td>`;
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll("input").forEach((el) => {
+    el.oninput = (e) => {
+      bellPeriods[+e.target.dataset.i][e.target.dataset.k] = e.target.value;
+      checkBellNames();
+    };
+  });
+  tb.querySelectorAll("button[data-del]").forEach((el) => {
+    el.onclick = (e) => { bellPeriods.splice(+e.target.dataset.del, 1); renderBell(); };
+  });
+  checkBellNames();
+}
+
+/**
+ * "Period 1" vs "P1" is the single most likely way this feature silently does
+ * nothing, so compare against the period keys actually present in the roster.
+ */
+async function checkBellNames() {
+  const warn = $("bellWarn");
+  const named = bellPeriods.map((p) => p.name).filter(Boolean);
+  if (!named.length) { warn.hidden = true; return; }
+  try {
+    const { getDocs, query: q4, limit: l4, collection: c4 } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+    const snap = await getDocs(q4(c4(db, "schools", SCHOOL_ID, "students"), l4(50)));
+    const keys = new Set();
+    snap.forEach((d) => Object.keys(d.data().schedule || {}).forEach((k) => keys.add(k)));
+    if (!keys.size) { warn.hidden = true; return; }
+    const unmatched = named.filter((n) => ![...keys].some((k) => k.toLowerCase() === n.toLowerCase()));
+    warn.hidden = unmatched.length === 0;
+    warn.textContent = unmatched.length
+      ? `No student has a period called ${unmatched.map((u) => `"${u}"`).join(", ")}. ` +
+        `Roster schedules use: ${[...keys].sort().join(", ")}.`
+      : "";
+  } catch { warn.hidden = true; }
+}
+
+async function loadBell() {
+  try {
+    const { getDoc, doc: d5 } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+    const snap = await getDoc(d5(db, "schools", SCHOOL_ID, "config", "bellSchedule"));
+    bellPeriods = snap.exists() ? (snap.data().periods || []) : [];
+  } catch { bellPeriods = []; }
+  if (!bellPeriods.length) {
+    bellPeriods = ["P1", "P2", "P3", "P4", "P5", "P6"].map((n) => ({ name: n, start: "", end: "" }));
+  }
+  renderBell();
+}
+
+$("bellAdd").onclick = () => {
+  bellPeriods.push({ name: `P${bellPeriods.length + 1}`, start: "", end: "" });
+  renderBell();
+};
+
+$("bellSave").onclick = async () => {
+  const { setDoc, doc: d6, serverTimestamp } =
+    await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+  // Blank rows are dropped rather than saved half-filled, so a period is either
+  // usable or absent — never present with an unparsable time.
+  const periods = bellPeriods
+    .map((p) => ({ name: (p.name || "").trim(), start: p.start || "", end: p.end || "" }))
+    .filter((p) => p.name && p.start && p.end);
+  $("bellStatus").style.color = "";
+  try {
+    await setDoc(
+      d6(db, "schools", SCHOOL_ID, "config", "bellSchedule"),
+      { periods, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, updatedAt: serverTimestamp() }
+    );
+    $("bellStatus").textContent = periods.length
+      ? `Saved ${periods.length} period(s). Every printer updates automatically.`
+      : "Saved with no periods — preselection and minutes-late are off.";
+  } catch (err) {
+    $("bellStatus").style.color = "var(--red)";
+    $("bellStatus").textContent = `Save failed: ${err.message}`;
+  }
+};
+
+$("date").value = ymd(new Date());
     subscribe();
   }
 });

@@ -7,6 +7,7 @@ import com.iar.tardypass.data.repo.PassRepository
 import com.iar.tardypass.data.repo.SettingsRepository
 import com.iar.tardypass.data.repo.StudentRepository
 import com.iar.tardypass.domain.StaffMember
+import com.iar.tardypass.domain.BellSchedule
 import com.iar.tardypass.domain.Pass
 import com.iar.tardypass.domain.Student
 import com.iar.tardypass.domain.receiptFor
@@ -69,7 +70,8 @@ data class HomeUiState(
      * Initials derived from the signed-in account's name. When present there is
      * nothing to type — the account already says who this is.
      */
-    val accountInitials: String? = null
+    val accountInitials: String? = null,
+    val bell: BellSchedule = BellSchedule.EMPTY
 )
 
 /** Who is currently claiming passes on a shared printer. */
@@ -111,6 +113,7 @@ class HomeViewModel(
                         initials = _state.value.initials.ifEmpty { cfg.staffInitials },
                         hideReason = cfg.hideReason,
                         deviceMode = effectiveRole == "device",
+                        bell = BellSchedule.fromJson(cfg.bellScheduleJson),
                         selectedStaff = if (expired || cfg.selectedStaffUid.isEmpty()) null
                         else SelectedStaff(cfg.selectedStaffUid, cfg.selectedStaffName)
                     )
@@ -216,7 +219,19 @@ class HomeViewModel(
 
     fun selectStudent(s: Student) {
         // Form state is rebuilt per student — the PWA's stale-period bug can't happen.
-        val firstPeriod = s.schedule.keys.sortedWith(periodComparator).firstOrNull() ?: ""
+        //
+        // With a bell schedule, prefer the period they're arriving for: during
+        // passing time that's the one about to start, not the one that ended. The
+        // suggestion is only used if this student actually has that period, so
+        // free periods and half-day timetables fall back to the old behaviour —
+        // which is also exactly what happens when no schedule is configured.
+        val suggested = _state.value.bell
+            .suggestedPeriodAt(minutesOfDayNow())
+            ?.name
+            ?.takeIf { name -> s.schedule.keys.any { it.equals(name, ignoreCase = true) } }
+        val firstPeriod = suggested
+            ?: s.schedule.keys.sortedWith(periodComparator).firstOrNull()
+            ?: ""
         _state.value = _state.value.copy(
             form = PassFormState(student = s, period = firstPeriod)
         )
@@ -329,14 +344,18 @@ class HomeViewModel(
                 printConfirmed = false
             )
 
-            val job = EscPos.buildReceipt(receiptFor(draft, cfg), cfg.encoding, cfg.selectCodePage)
+            val job = EscPos.buildReceipt(
+                receiptFor(draft, cfg, bell = _state.value.bell),
+                cfg.encoding, cfg.selectCodePage
+            )
             val (result, driverId) = printer.print(job)
 
             if (result.succeeded) {
                 if (cfg.enableLogging) {
                     val pass = draft.copy(
                         printDriver = driverId,
-                        printConfirmed = result.confirmed
+                        printConfirmed = result.confirmed,
+                        minutesLate = receiptFor(draft, cfg, bell = _state.value.bell).minutesLate
                     )
                     passes.record(pass)
 
@@ -391,6 +410,10 @@ class HomeViewModel(
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
         set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
     }.timeInMillis
+
+    private fun minutesOfDayNow(): Int = Calendar.getInstance().let {
+        it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE)
+    }
 
     private val periodComparator = Comparator<String> { a, b ->
         val na = a.filter { it.isDigit() }.toIntOrNull()

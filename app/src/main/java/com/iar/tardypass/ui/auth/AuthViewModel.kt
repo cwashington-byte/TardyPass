@@ -51,6 +51,7 @@ class AuthViewModel(
                     )
                     sync.startRosterListener()
                     sync.startMemberListener(r.user.uid)
+                    sync.startBellScheduleListener()
                     if (claimed) "Welcome, ${r.user.displayName} — access granted"
                     else "Signed in as ${r.user.displayName}"
                 }
@@ -74,6 +75,7 @@ class AuthViewModel(
                 val claimed = sync.claimInviteIfPresent(u.uid, u.email, u.displayName)
                 if (claimed) _state.value = _state.value.copy(message = "Access granted")
                 sync.startMemberListener(u.uid)
+                sync.startBellScheduleListener()
             }
             sync.retryRosterListener()
         }
@@ -83,6 +85,7 @@ class AuthViewModel(
         auth.signOut()
         sync.stopRosterListener()
         sync.stopMemberListener()
+        sync.stopBellScheduleListener()
         _state.value = _state.value.copy(message = "Signed out")
     }
 

@@ -39,6 +39,8 @@ data class AppSettings(
     val staffTimeoutMinutes: Int = 5,           // 0 = never clear
     /** Last role Firestore reported, so a cold start knows the mode immediately. */
     val lastKnownRole: String = "",
+    /** Cached copy of the school's bell schedule; printing must not need network. */
+    val bellScheduleJson: String = "",
     val serialDevicePath: String = "",          // filled by Phase 0 discovery / probing
     val bluetoothAddress: String = "",
     val schoolId: String = DEFAULT_SCHOOL_ID    // multi-school later without migration
@@ -63,6 +65,7 @@ class SettingsRepository(private val context: Context) {
         val SELECTED_STAFF_AT = longPreferencesKey("selected_staff_at")
         val STAFF_TIMEOUT_MIN = intPreferencesKey("staff_timeout_min")
         val LAST_KNOWN_ROLE = stringPreferencesKey("last_known_role")
+        val BELL_SCHEDULE_JSON = stringPreferencesKey("bell_schedule_json")
         val SERIAL_PATH = stringPreferencesKey("serial_device_path")
         val BT_ADDRESS = stringPreferencesKey("bt_address")
         val SCHOOL_ID = stringPreferencesKey("school_id")
@@ -87,6 +90,7 @@ class SettingsRepository(private val context: Context) {
             selectedStaffAtMillis = p[Keys.SELECTED_STAFF_AT] ?: 0L,
             staffTimeoutMinutes = p[Keys.STAFF_TIMEOUT_MIN] ?: 5,
             lastKnownRole = p[Keys.LAST_KNOWN_ROLE] ?: "",
+            bellScheduleJson = p[Keys.BELL_SCHEDULE_JSON] ?: "",
             serialDevicePath = p[Keys.SERIAL_PATH] ?: "",
             bluetoothAddress = p[Keys.BT_ADDRESS] ?: "",
             schoolId = p[Keys.SCHOOL_ID] ?: DEFAULT_SCHOOL_ID
@@ -128,6 +132,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setStaffTimeoutMinutes(v: Int) = context.dataStore.edit { it[Keys.STAFF_TIMEOUT_MIN] = v }
     suspend fun setLastKnownRole(v: String) = context.dataStore.edit { it[Keys.LAST_KNOWN_ROLE] = v }
+    suspend fun setBellScheduleJson(v: String) = context.dataStore.edit { it[Keys.BELL_SCHEDULE_JSON] = v }
     suspend fun setSerialDevicePath(v: String) = context.dataStore.edit { it[Keys.SERIAL_PATH] = v }
     suspend fun setBluetoothAddress(v: String) = context.dataStore.edit { it[Keys.BT_ADDRESS] = v }
 }

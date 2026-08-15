@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import com.iar.tardypass.domain.BellSchedule
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -211,6 +213,35 @@ fun SettingsScreen(
                             )
                         }
                 }
+            }
+        }
+
+        // Read-only here: entering a schedule is a typing-heavy once-a-year job
+        // that belongs on a real keyboard. This view is how staff answer "why did
+        // it pick P3?".
+        CollapsibleCard("Bell schedule") {
+            val bell = remember(settings.bellScheduleJson) {
+                BellSchedule.fromJson(settings.bellScheduleJson)
+            }
+            if (!bell.isConfigured) {
+                Text(
+                    "Not configured — the period isn't preselected and minutes late " +
+                        "won't print. An administrator sets this on the attendance dashboard.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+            } else {
+                bell.periods.forEach { p ->
+                    Row(Modifier.fillMaxWidth()) {
+                        Text(p.name, Modifier.width(64.dp), fontWeight = FontWeight.SemiBold)
+                        Text("${p.start} – ${p.end}")
+                    }
+                }
+                Text(
+                    "Managed on the attendance dashboard.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
             }
         }
 

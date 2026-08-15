@@ -44,6 +44,7 @@ object EscPos {
         line("Student", "${data.name} (${data.id})")
         line("Date", data.date)
         line("Time", data.time)
+        line("Minutes late", data.minutesLate?.toString())
         line("Period", data.period)
         line("Class", data.course)
         line("Room", data.room)

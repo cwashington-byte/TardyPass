@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import com.iar.tardypass.BuildConfig
 import com.iar.tardypass.data.local.StudentEntity
+import com.iar.tardypass.domain.BellPeriod
+import com.iar.tardypass.domain.BellSchedule
 import com.iar.tardypass.domain.Invite
 import com.iar.tardypass.domain.Member
 import com.iar.tardypass.domain.Pass
@@ -57,6 +59,7 @@ class FirestoreSync(
 
     private var rosterListener: ListenerRegistration? = null
     private var memberListener: ListenerRegistration? = null
+    private var bellListener: ListenerRegistration? = null
 
     /** "admin" | "staff" | "device" | null when signed out or not a member here. */
     private val _memberRole = MutableStateFlow<String?>(null)
@@ -128,6 +131,7 @@ class FirestoreSync(
             "staffInitials" to pass.staffInitials,
             "printDriver" to pass.printDriver,
             "printConfirmed" to pass.printConfirmed,
+            "minutesLate" to pass.minutesLate,
             "schoolYear" to currentSchoolYear()
         )
         // These two are mutually exclusive and the rules enforce it: staffUid
@@ -196,8 +200,44 @@ class FirestoreSync(
         excused = getBoolean("excused") ?: false,
         printDriver = getString("printDriver") ?: "",
         printConfirmed = getBoolean("printConfirmed") ?: false,
+        minutesLate = getLong("minutesLate")?.toInt(),
         deviceName = getString("deviceName")
     )
+
+    // ---- Bell schedule ------------------------------------------------------
+
+    /**
+     * Watches the school's bell schedule doc. One document, so the read cost is
+     * negligible, and it keeps every printer on the same times — a per-device
+     * schedule would guarantee four printers drift apart.
+     */
+    fun startBellScheduleListener() {
+        val school = schoolDoc() ?: return
+        bellListener?.remove()
+        bellListener = school.collection("config").document("bellSchedule")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                val raw = snapshot?.get("periods")?.let { periods ->
+                    @Suppress("UNCHECKED_CAST")
+                    val list = (periods as? List<Map<String, Any?>>).orEmpty().mapNotNull { m ->
+                        val name = m["name"] as? String ?: return@mapNotNull null
+                        val start = m["start"] as? String ?: return@mapNotNull null
+                        val end = m["end"] as? String ?: return@mapNotNull null
+                        BellPeriod(name, start, end)
+                    }
+                    BellSchedule.toJson(BellSchedule(list))
+                } ?: BellSchedule.toJson(BellSchedule.EMPTY)
+                onBellSchedule?.invoke(raw)
+            }
+    }
+
+    fun stopBellScheduleListener() {
+        bellListener?.remove()
+        bellListener = null
+    }
+
+    /** Sunk by AppContainer, which owns the scope for the DataStore write. */
+    var onBellSchedule: ((String) -> Unit)? = null
 
     // ---- Staff list (people creditable on a pass, no account required) ------
 

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.iar.tardypass.data.remote.FirestoreSync
 import com.iar.tardypass.data.repo.PassRepository
 import com.iar.tardypass.data.repo.SettingsRepository
+import com.iar.tardypass.domain.BellSchedule
 import com.iar.tardypass.domain.Pass
 import com.iar.tardypass.domain.receiptFor
 import com.iar.tardypass.printing.EscPos
@@ -50,7 +51,11 @@ class LogsViewModel(
         reprinting.value = true
         viewModelScope.launch {
             val cfg = settings.current()
-            val receipt = receiptFor(pass, cfg, reprintAt = System.currentTimeMillis())
+            val receipt = receiptFor(
+                pass, cfg,
+                reprintAt = System.currentTimeMillis(),
+                bell = BellSchedule.fromJson(cfg.bellScheduleJson)
+            )
             val (result, _) = printer.print(EscPos.buildReceipt(receipt, cfg.encoding, cfg.selectCodePage))
             reprinting.value = false
             message.value = when (result) {
