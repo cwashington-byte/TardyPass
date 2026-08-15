@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 val Blue600 = Color(0xFF2563EB)
 val Green600 = Color(0xFF16A34A)
 val Red600 = Color(0xFFDC2626)
+val Amber700 = Color(0xFFB45309)
 val Slate900 = Color(0xFF111827)
 
 private val LightColors = lightColorScheme(

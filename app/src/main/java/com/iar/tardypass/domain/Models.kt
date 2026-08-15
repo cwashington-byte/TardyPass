@@ -116,5 +116,12 @@ data class PassReceipt(
     val room: String? = null,
     val reason: String? = null,
     val staff: String? = null,
-    val status: String? = null
+    val status: String? = null,
+    /** Banner under the title, e.g. "*** REPRINT ***". Null on a normal pass. */
+    val notice: String? = null,
+    val noticeDetail: String? = null,
+    val footer: String = DEFAULT_PASS_FOOTER
 )
+
+/** Matches what EscPos printed before the footer became configurable. */
+const val DEFAULT_PASS_FOOTER = "Proceed directly to class."

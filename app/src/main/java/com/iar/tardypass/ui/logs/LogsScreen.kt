@@ -3,6 +3,13 @@ package com.iar.tardypass.ui.logs
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.LaunchedEffect
+import com.iar.tardypass.domain.Pass
+import com.iar.tardypass.ui.theme.Amber700
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -48,6 +55,59 @@ fun LogsScreen(vm: LogsViewModel) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var confirmClear by remember { mutableStateOf(false) }
+    var pendingReprint by remember { mutableStateOf<Pass?>(null) }
+    val message by vm.message.collectAsState()
+    val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(message) {
+        message?.let { snackbar.showSnackbar(it); vm.dismissMessage() }
+    }
+
+    pendingReprint?.let { p ->
+        val sameDay = SimpleDateFormat("yyyyMMdd", Locale.US).let {
+            it.format(Date(p.timestampMillis)) == it.format(Date())
+        }
+        AlertDialog(
+            onDismissRequest = { pendingReprint = null },
+            title = { Text("Reprint pass for ${p.studentLastName}, ${p.studentFirstName}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        buildString {
+                            append(SimpleDateFormat("MM/dd hh:mm a", Locale.US).format(Date(p.timestampMillis)))
+                            if (p.period.isNotBlank()) append(" · ${p.period}")
+                            p.reason?.let { append(" · $it") }
+                            (p.staffName ?: p.staffInitials)?.let { append(" · $it") }
+                        }
+                    )
+                    // Naming the origin stops someone reissuing another printer's
+                    // pass without noticing.
+                    p.deviceName?.let {
+                        Text("Originally printed on $it", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (!sameDay) {
+                        Text(
+                            "This pass is not from today.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Amber700
+                        )
+                    }
+                    Text(
+                        "The slip will be marked REPRINT and keep the original date and time. " +
+                            "No new pass is recorded.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.reprint(p); pendingReprint = null }) { Text("Reprint") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingReprint = null }) { Text("Cancel") }
+            }
+        )
+    }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
@@ -74,6 +134,7 @@ fun LogsScreen(vm: LogsViewModel) {
         )
     }
 
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier
@@ -115,7 +176,11 @@ fun LogsScreen(vm: LogsViewModel) {
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             items(logs, key = { it.remoteId ?: "local-${it.id}" }) { p ->
-                Card(Modifier.fillMaxWidth()) {
+                Card(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { pendingReprint = p }
+                ) {
                     Row(
                         Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -150,5 +215,7 @@ fun LogsScreen(vm: LogsViewModel) {
                 }
             }
         }
+    }
+    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(12.dp))
     }
 }

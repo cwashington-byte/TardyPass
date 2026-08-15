@@ -8,8 +8,8 @@ import com.iar.tardypass.data.repo.SettingsRepository
 import com.iar.tardypass.data.repo.StudentRepository
 import com.iar.tardypass.domain.StaffMember
 import com.iar.tardypass.domain.Pass
-import com.iar.tardypass.domain.PassReceipt
 import com.iar.tardypass.domain.Student
+import com.iar.tardypass.domain.receiptFor
 import com.iar.tardypass.domain.initialsFrom
 import com.iar.tardypass.printing.EscPos
 import com.iar.tardypass.printing.PrinterManager
@@ -297,50 +297,44 @@ class HomeViewModel(
                 ?: _state.value.accountInitials
                 ?: st.initials.trim().ifEmpty { null }
 
-            val receipt = PassReceipt(
-                title = cfg.passTitle,
-                name = form.student.fullName,
-                id = form.student.id,
-                date = SimpleDateFormat("MM/dd/yyyy", Locale.US).format(now),
-                time = SimpleDateFormat("hh:mm a", Locale.US).format(now),
-                period = if (cfg.hidePeriod) null else form.period.ifBlank { null },
-                course = if (cfg.hideCourse) null else entry?.course?.ifBlank { null },
-                room = if (cfg.hideRoom) null else entry?.room?.ifBlank { null },
+            val account = auth?.currentUser?.value
+            val deviceMode = _state.value.deviceMode
+            // In device mode the pass belongs to the person who picked their name
+            // off the staff list; the signed-in account is only the machine, and
+            // staffUid stays null because nothing proved who it was. A personal
+            // account keeps the proven staffUid.
+            val attributedUid = if (deviceMode) null else account?.uid
+            val attributedStaffId = if (deviceMode) selected?.id else null
+            val attributedName = if (deviceMode) selected?.name else account?.displayName
+
+            // Built before printing so the slip and the recorded row are composed
+            // from one object; the driver and confirmation are stamped on after.
+            val draft = Pass(
+                studentId = form.student.id,
+                studentFirstName = form.student.firstName,
+                studentLastName = form.student.lastName,
+                timestampMillis = now.time,
+                period = form.period,
+                course = entry?.course ?: "",
+                room = entry?.room ?: "",
                 reason = reason,
                 // On a shared printer the picked person's initials are authoritative;
                 // the typed field is only a fallback for unsynced devices.
-                staff = effectiveInitials,
-                status = if (excused) "Excused" else "Unexcused"
+                staffInitials = effectiveInitials,
+                staffUid = attributedUid,
+                staffId = attributedStaffId,
+                staffName = attributedName,
+                excused = excused,
+                printDriver = "",
+                printConfirmed = false
             )
-            val job = EscPos.buildReceipt(receipt, cfg.encoding, cfg.selectCodePage)
+
+            val job = EscPos.buildReceipt(receiptFor(draft, cfg), cfg.encoding, cfg.selectCodePage)
             val (result, driverId) = printer.print(job)
 
             if (result.succeeded) {
                 if (cfg.enableLogging) {
-                    val account = auth?.currentUser?.value
-                    val deviceMode = _state.value.deviceMode
-                    // In device mode the pass belongs to the person who picked
-                    // their name off the staff list; the signed-in account is only
-                    // the machine, and staffUid stays null because nothing proved
-                    // who it was. A personal account keeps the proven staffUid.
-                    val attributedUid = if (deviceMode) null else account?.uid
-                    val attributedStaffId = if (deviceMode) selected?.id else null
-                    val attributedName = if (deviceMode) selected?.name else account?.displayName
-
-                    val pass = Pass(
-                        studentId = form.student.id,
-                        studentFirstName = form.student.firstName,
-                        studentLastName = form.student.lastName,
-                        timestampMillis = now.time,
-                        period = form.period,
-                        course = entry?.course ?: "",
-                        room = entry?.room ?: "",
-                        reason = reason,
-                        staffInitials = effectiveInitials,
-                        staffUid = attributedUid,
-                        staffId = attributedStaffId,
-                        staffName = attributedName,
-                        excused = excused,
+                    val pass = draft.copy(
                         printDriver = driverId,
                         printConfirmed = result.confirmed
                     )

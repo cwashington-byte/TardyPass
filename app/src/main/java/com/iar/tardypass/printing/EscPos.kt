@@ -33,6 +33,12 @@ object EscPos {
         }
         a(ESC, 0x61, 0x01)        // center
         a(ESC, 0x45, 0x01); txt(data.title + "\n"); a(ESC, 0x45, 0x00)  // bold title
+        // A reissued slip has to be distinguishable at a glance, or two identical
+        // passes can circulate as two. Nullable, so a normal pass is unchanged.
+        if (data.notice != null) {
+            a(ESC, 0x45, 0x01); txt(data.notice + "\n"); a(ESC, 0x45, 0x00)
+            data.noticeDetail?.let { txt(it + "\n") }
+        }
         a(ESC, 0x61, 0x00)        // left
 
         line("Student", "${data.name} (${data.id})")
@@ -46,7 +52,7 @@ object EscPos {
         line("Status", data.status ?: "Unexcused")
 
         txt("------------------------------\n")
-        a(ESC, 0x61, 0x01); txt("Proceed directly to class.\n"); a(ESC, 0x61, 0x00)
+        a(ESC, 0x61, 0x01); txt(data.footer + "\n"); a(ESC, 0x61, 0x00)
         a(ESC, 0x64, 0x03)        // feed 3 lines
         return out.toByteArray()
     }

@@ -3,6 +3,8 @@ package com.iar.tardypass.printing
 import com.iar.tardypass.domain.PassReceipt
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Base64
 
@@ -44,6 +46,49 @@ class EscPosTest {
             )
         )
         assertArrayEquals(expected, actual)
+    }
+
+    @Test
+    fun `reprint adds a banner but leaves the original date and time untouched`() {
+        val original = PassReceipt(
+            title = "IAR Tardy Pass",
+            name = "Alice Nguyen", id = "10001",
+            date = "08/13/2026", time = "09:41 AM",
+            reason = "Tardy", staff = "CW", status = "Unexcused"
+        )
+        val reprint = original.copy(
+            notice = "*** REPRINT ***",
+            noticeDetail = "Reprinted 02:15 PM"
+        )
+        val a = String(EscPos.buildReceipt(original), charset("IBM437"))
+        val b = String(EscPos.buildReceipt(reprint), charset("IBM437"))
+
+        assertTrue(b.contains("*** REPRINT ***"))
+        assertTrue(b.contains("Reprinted 02:15 PM"))
+        assertFalse(a.contains("REPRINT"))
+
+        // The pass is the same pass: every substantive line is byte-identical,
+        // and the issue date/time in particular must not shift to "now".
+        listOf(
+            "Student: Alice Nguyen (10001)",
+            "Date: 08/13/2026",
+            "Time: 09:41 AM",
+            "Reason: Tardy",
+            "Staff: CW",
+            "Status: Unexcused"
+        ).forEach {
+            assertTrue("original missing: $it", a.contains(it))
+            assertTrue("reprint missing: $it", b.contains(it))
+        }
+    }
+
+    @Test
+    fun `footer is configurable and defaults to the original wording`() {
+        val base = PassReceipt(title = "T", name = "N", id = "1", date = "d", time = "t")
+        assertTrue(String(EscPos.buildReceipt(base), charset("IBM437"))
+            .contains("Proceed directly to class."))
+        assertTrue(String(EscPos.buildReceipt(base.copy(footer = "Report to the office.")), charset("IBM437"))
+            .contains("Report to the office."))
     }
 
     @Test
