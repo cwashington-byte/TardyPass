@@ -87,6 +87,11 @@
   .roster input[type="file"] { margin: 8px 0; }
   .roster button { margin-right: 8px; margin-top: 6px; }
   #previewErrors { color: var(--red); max-height: 140px; overflow: auto; margin: 6px 0; }
+  .cull { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 8px 0; }
+  .cull.danger { border-color: var(--red); background: rgba(220,38,38,.07); }
+  .cull.danger #cullText { color: var(--red); font-weight: 600; }
+  #cullList { max-height: 160px; overflow: auto; margin-top: 6px; color: var(--muted); }
+  #cullConfirm { margin-left: 6px; }
 
   .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
            padding: 26px; text-align: center; }
@@ -181,13 +186,28 @@
       <p class="small muted" id="rosterCount">—</p>
       <p class="small muted">
         Upload a student export (CSV). Existing students are updated and new ones
-        added — nothing is deleted. Every printer picks up the change automatically.
+        added, and a student who left and came back is reactivated. Students are
+        never deleted — their past passes stay in the records. Every printer picks
+        up the change automatically.
       </p>
       <input type="file" id="file" accept=".csv,.txt,text/csv,text/plain" />
+      <label class="small" style="display:block;margin:8px 0">
+        <input type="checkbox" id="fullReplace" />
+        This is a complete roster — mark students missing from this file inactive
+      </label>
       <div id="preview" hidden>
         <p class="small" id="previewText"></p>
+        <div id="cullPanel" class="cull" hidden>
+          <p class="small" id="cullText"></p>
+          <details><summary class="small">Show who would be deactivated</summary>
+            <div class="small" id="cullList"></div></details>
+          <p class="small" id="cullConfirmPrompt" hidden>
+            Type <strong>DEACTIVATE</strong> to continue:
+            <input type="text" id="cullConfirm" autocomplete="off" />
+          </p>
+        </div>
         <div id="previewErrors" class="small" hidden></div>
-        <button class="primary" id="doImport">Import</button>
+        <button class="primary" id="doImport" disabled>Import</button>
         <button id="cancelImport">Cancel</button>
       </div>
       <p class="small" id="importStatus"></p>
@@ -525,36 +545,119 @@ function parseRoster(text) {
   return { students, errors };
 }
 
-let pending = null;
+let pending = null;      // { res, diff } once the preview has been computed
 
-$("file").onchange = async (e) => {
-  const f = e.target.files?.[0];
-  if (!f) return;
+/**
+ * Recomputed whenever the file OR the checkbox changes. The Import button stays
+ * disabled until this finishes, which is what guarantees the deactivation count
+ * has been shown before anyone can confirm.
+ */
+async function buildPreview() {
+  const f = $("file").files?.[0];
+  $("doImport").disabled = true;
+  $("cullPanel").hidden = true;
+  $("cullPanel").classList.remove("danger");
+  $("cullConfirmPrompt").hidden = true;
+  $("cullConfirm").value = "";
+  if (!f) { $("preview").hidden = true; pending = null; return; }
+
   $("importStatus").textContent = "";
-  const text = await f.text();
-  const res = parseRoster(text);
+  $("importStatus").style.color = "";
+  const res = parseRoster(await f.text());
   if (!res.students.length) {
     $("preview").hidden = true;
+    pending = null;
     $("importStatus").textContent = res.errors[0]?.msg || "No students found.";
     $("importStatus").style.color = "var(--red)";
     return;
   }
-  pending = res;
-  $("previewText").textContent =
-    `${res.students.length} student(s) ready to import from ${f.name}.` +
+
+  const fileIds = new Set(res.students.map((s) => s.id));
+  let diff = null;
+
+  if ($("fullReplace").checked) {
+    $("previewText").textContent = "Checking which students would be deactivated…";
+    $("preview").hidden = false;
+    const { getDocs, query: q2, where: w2, collection: coll2 } =
+      await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
+    const snap = await getDocs(
+      q2(coll2(db, "schools", SCHOOL_ID, "students"), w2("active", "==", true))
+    );
+    const existing = new Map();
+    snap.forEach((d) => existing.set(d.id, `${d.data().lastName || ""}, ${d.data().firstName || ""}`));
+    const deactivate = [...existing.keys()].filter((id) => !fileIds.has(id));
+    diff = {
+      deactivateIds: deactivate,
+      names: deactivate.map((id) => existing.get(id)).sort(),
+      activeBefore: existing.size,
+      newCount: res.students.filter((s) => !existing.has(s.id)).length
+    };
+  }
+
+  pending = { res, diff };
+
+  const parts = [];
+  if (diff) {
+    parts.push(`${diff.newCount} new`);
+    parts.push(`${res.students.length - diff.newCount} updated`);
+    parts.push(diff.deactivateIds.length
+      ? `${diff.deactivateIds.length} will be marked inactive (of ${diff.activeBefore} active)`
+      : "nothing will be deactivated");
+  } else {
+    parts.push(`${res.students.length} student(s) to import`);
+    parts.push("nothing will be deactivated");
+  }
+  $("previewText").textContent = parts.join(" · ") + ` — from ${f.name}.` +
     (res.errors.length ? ` ${res.errors.length} row(s) will be skipped:` : "");
+
   const errBox = $("previewErrors");
   errBox.hidden = res.errors.length === 0;
   errBox.innerHTML = res.errors.slice(0, 25)
     .map((x) => `Row ${x.row}: ${x.msg}`).join("<br>") +
     (res.errors.length > 25 ? `<br>…and ${res.errors.length - 25} more` : "");
+
+  if (diff && diff.deactivateIds.length) {
+    $("cullPanel").hidden = false;
+    $("cullList").innerHTML = diff.names.slice(0, 25).map(escapeHtml).join("<br>") +
+      (diff.names.length > 25 ? `<br>…and ${diff.names.length - 25} more` : "");
+    // A large share of the roster disappearing is what a partial export looks
+    // like. Make it loud and make the confirmation deliberate.
+    const share = diff.activeBefore ? diff.deactivateIds.length / diff.activeBefore : 0;
+    if (diff.activeBefore >= 10 && share > 0.40) {
+      $("cullPanel").classList.add("danger");
+      $("cullText").textContent =
+        `This would deactivate ${diff.deactivateIds.length} of ${diff.activeBefore} students ` +
+        `(${Math.round(share * 100)}%). That is what a partial file looks like — ` +
+        `check you exported the whole school.`;
+      $("cullConfirmPrompt").hidden = false;
+      $("doImport").disabled = true;
+      return;
+    }
+    $("cullText").textContent =
+      `${diff.deactivateIds.length} student(s) will be marked inactive. They stay in the ` +
+      `records and their past passes are kept.`;
+  }
+
   $("preview").hidden = false;
+  $("doImport").disabled = false;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+$("file").onchange = buildPreview;
+$("fullReplace").onchange = buildPreview;
+$("cullConfirm").oninput = (e) => {
+  $("doImport").disabled = e.target.value.trim().toUpperCase() !== "DEACTIVATE";
 };
 
 $("cancelImport").onclick = () => {
   pending = null;
   $("preview").hidden = true;
   $("file").value = "";
+  $("fullReplace").checked = false;
 };
 
 $("doImport").onclick = async () => {
@@ -564,7 +667,7 @@ $("doImport").onclick = async () => {
   $("doImport").disabled = true;
   $("importStatus").style.color = "";
   try {
-    const all = pending.students;
+    const all = pending.res.students;
     // Firestore caps a batch at 500 writes; 400 leaves headroom.
     for (let i = 0; i < all.length; i += 400) {
       const chunk = all.slice(i, i + 400);
@@ -583,26 +686,55 @@ $("doImport").onclick = async () => {
       await batch.commit();
       $("importStatus").textContent = `Imported ${Math.min(i + 400, all.length)} of ${all.length}…`;
     }
+
+    // Deactivations run only after every upsert has committed, so a student
+    // present in the file can never briefly appear inactive.
+    let deactivated = 0;
+    const toCull = pending.diff?.deactivateIds || [];
+    for (let i = 0; i < toCull.length; i += 400) {
+      const chunk = toCull.slice(i, i + 400);
+      const batch = writeBatch(db);
+      for (const id of chunk) {
+        batch.set(
+          docRef(db, "schools", SCHOOL_ID, "students", id),
+          { active: false, deactivatedAt: serverTimestamp(), updatedAt: serverTimestamp(), source: "web-upload-full" },
+          { merge: true }
+        );
+      }
+      await batch.commit();
+      deactivated += chunk.length;
+      $("importStatus").textContent = `Deactivating ${deactivated} of ${toCull.length}…`;
+    }
+
     $("importStatus").textContent =
-      `Imported ${all.length} student(s). All devices will update automatically.`;
+      `Imported ${all.length} student(s)` +
+      (deactivated ? `; ${deactivated} marked inactive` : "") +
+      `. All devices will update automatically.`;
     $("preview").hidden = true;
     $("file").value = "";
+    $("fullReplace").checked = false;
     pending = null;
     countRoster();
   } catch (err) {
     $("importStatus").style.color = "var(--red)";
     $("importStatus").textContent = `Import failed: ${err.message}`;
-  } finally {
     $("doImport").disabled = false;
   }
 };
 
 async function countRoster() {
   try {
-    const { getCountFromServer, collection: coll } =
+    const { getCountFromServer, collection: coll, query: q3, where: w3 } =
       await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js");
-    const snap = await getCountFromServer(coll(db, "schools", SCHOOL_ID, "students"));
-    $("rosterCount").textContent = `${snap.data().count} students currently in the roster`;
+    const base = coll(db, "schools", SCHOOL_ID, "students");
+    const [act, all] = await Promise.all([
+      getCountFromServer(q3(base, w3("active", "==", true))),
+      getCountFromServer(base)
+    ]);
+    const a = act.data().count, t = all.data().count;
+    $("rosterCount").textContent = t > a
+      ? `${a} active students (${t} on file including inactive)`
+      : `${a} active students`;
   } catch {
     $("rosterCount").textContent = "";
   }

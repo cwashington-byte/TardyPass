@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
@@ -98,11 +99,37 @@ fun ImportScreen(vm: ImportViewModel) {
             }
 
             is ImportUiState.Preview -> {
-                var fullReplace by remember { mutableStateOf(false) }
+                val diff = s.diff
+                val partial = diff?.looksLikePartialFile() == true
+                var confirmCull by remember(s.text) { mutableStateOf(false) }
+
+                if (confirmCull && diff != null) {
+                    AlertDialog(
+                        onDismissRequest = { confirmCull = false },
+                        title = { Text("Deactivate ${diff.deactivateIds.size} students?") },
+                        text = {
+                            Text(
+                                "That is ${(diff.deactivateShare * 100).toInt()}% of the " +
+                                    "${diff.activeBefore} students currently active. That is what a " +
+                                    "partial export looks like — check this file covers the whole school."
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = { confirmCull = false; vm.confirm(true) }) {
+                                Text("Deactivate anyway", color = Red600)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmCull = false }) { Text("Cancel") }
+                        }
+                    )
+                }
+
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Ready to import", style = MaterialTheme.typography.titleMedium)
                         Text("${s.result.students.size} students parsed")
+
                         if (s.result.errors.isNotEmpty()) {
                             Text(
                                 "${s.result.errors.size} row(s) skipped:",
@@ -117,23 +144,54 @@ fun ImportScreen(vm: ImportViewModel) {
                                 )
                             }
                             if (s.result.errors.size > 10) {
-                                Text("…and ${s.result.errors.size - 10} more", style = MaterialTheme.typography.bodySmall)
+                                Text(
+                                    "…and ${s.result.errors.size - 10} more",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                         }
+
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = fullReplace, onCheckedChange = { fullReplace = it })
+                            Checkbox(
+                                checked = s.fullReplace,
+                                onCheckedChange = { vm.setFullReplace(it) }
+                            )
                             Column {
-                                Text("Full roster replace")
+                                Text("This is a complete roster")
                                 Text(
-                                    "Deactivates students not present in this file. Leave off to merge.",
+                                    "Students missing from this file are marked inactive. Nothing is " +
+                                        "ever deleted — their past passes stay in the records.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                 )
                             }
                         }
+
+                        if (s.fullReplace) {
+                            Text(
+                                when {
+                                    diff == null -> "Checking which students would be deactivated…"
+                                    diff.deactivateIds.isEmpty() ->
+                                        "Nothing will be deactivated."
+                                    else ->
+                                        "${diff.deactivateIds.size} of ${diff.activeBefore} active " +
+                                            "students will be marked inactive."
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (partial) Red600
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            )
+                        }
+
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
-                                onClick = { vm.confirm(fullReplace) },
+                                // Disabled until the diff lands, so the count is
+                                // always on screen before anyone can confirm.
+                                enabled = !s.fullReplace || diff != null,
+                                onClick = {
+                                    if (partial) confirmCull = true else vm.confirm(s.fullReplace)
+                                },
                                 modifier = Modifier.weight(1f).height(52.dp)
                             ) { Text("Import ${s.result.students.size} students") }
                             OutlinedButton(onClick = vm::reset) { Text("Cancel") }
@@ -146,6 +204,7 @@ fun ImportScreen(vm: ImportViewModel) {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Imported ${s.imported} students ✓", style = MaterialTheme.typography.titleMedium)
+                        if (s.deactivated > 0) Text("${s.deactivated} student(s) marked inactive.")
                         if (s.errorCount > 0) Text("${s.errorCount} row(s) were skipped.")
                         Text(
                             if (s.syncedToCloud) "Synced to all devices."
