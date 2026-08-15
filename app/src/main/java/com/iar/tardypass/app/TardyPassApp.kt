@@ -57,8 +57,14 @@ class AppContainer(app: Application) {
             currentSchoolId = settings.current().schoolId
             // Roster snapshots arrive on a Firestore thread; persist them here
             // where we own a scope.
-            sync.onRosterSnapshot = { entities ->
-                appScope.launch { db.studentDao().upsertAll(entities) }
+            sync.onRosterSnapshot = { entities, syncedAt, authoritative ->
+                appScope.launch {
+                    // A server snapshot is the whole truth, so mirror it exactly —
+                    // that's what makes a student deleted server-side disappear
+                    // here too. A cache-only snapshot is additive: never prune.
+                    if (authoritative) db.studentDao().reconcileRoster(entities, syncedAt)
+                    else db.studentDao().upsertAll(entities)
+                }
             }
             // Restore listeners for a session that persisted across app restarts,
             // and pick up access granted since the last launch.

@@ -139,7 +139,10 @@ service cloud.firestore {
         // Roster changes come from CSV import (admin) or the SIS sync function
         // (service account, which bypasses rules).
         allow create, update: if isAdmin(schoolId);
-        allow delete: if isAdmin(schoolId);
+        // Students are never deleted: passes reference studentId and the history
+        // has to stay readable. Culling sets active:false instead. A genuine
+        // erasure request is a console/Admin-SDK operation, which bypasses rules.
+        allow delete: if false;
       }
 
       match /passes/{passId} {

@@ -36,16 +36,47 @@ interface StudentDao {
     @Upsert
     suspend fun upsertAll(students: List<StudentEntity>)
 
-    @Query("UPDATE students SET active = 0 WHERE id NOT IN (:keepIds)")
-    suspend fun deactivateMissing(keepIds: List<String>)
+    @Query("SELECT id FROM students WHERE active = 1")
+    suspend fun activeIds(): List<String>
+
+    /**
+     * Cull after a full-replace import: anything this import didn't touch.
+     *
+     * Compares a timestamp rather than `id NOT IN (:keepIds)` — that form binds
+     * one host parameter per student and would hit SQLite's parameter ceiling on
+     * a large roster. `AND active = 1` avoids rewriting already-inactive rows
+     * and churning the FTS shadow tables.
+     */
+    @Query("UPDATE students SET active = 0 WHERE updatedAt < :importedAt AND active = 1")
+    suspend fun deactivateOlderThan(importedAt: Long)
+
+    /** Drops students the server no longer has at all. See [reconcileRoster]. */
+    @Query("DELETE FROM students WHERE updatedAt < :syncedAt")
+    suspend fun deleteOlderThan(syncedAt: Long)
 
     @Query("DELETE FROM students")
     suspend fun deleteAll()
 
+    /**
+     * Transactional so a roster snapshot landing between the upsert and the cull
+     * can't rescue departed students by bumping their `updatedAt`.
+     */
     @Transaction
-    suspend fun replaceAll(students: List<StudentEntity>) {
-        deleteAll()
+    suspend fun applyFullReplace(students: List<StudentEntity>, importedAt: Long) {
         upsertAll(students)
+        deactivateOlderThan(importedAt)
+    }
+
+    /**
+     * Mirror a complete server snapshot: upsert everything present, drop what's
+     * gone. Reconciling against the whole snapshot (rather than watching
+     * DocumentChange.REMOVED) also covers the emptied-collection case and
+     * self-heals after a listener restart that missed a removal.
+     */
+    @Transaction
+    suspend fun reconcileRoster(students: List<StudentEntity>, syncedAt: Long) {
+        upsertAll(students)
+        deleteOlderThan(syncedAt)
     }
 }
 

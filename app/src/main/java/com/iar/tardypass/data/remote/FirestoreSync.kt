@@ -13,6 +13,7 @@ import com.iar.tardypass.data.local.StudentEntity
 import com.iar.tardypass.domain.Invite
 import com.iar.tardypass.domain.Member
 import com.iar.tardypass.domain.Pass
+import com.iar.tardypass.domain.RosterDiff
 import com.iar.tardypass.domain.ScheduleEntry
 import com.iar.tardypass.domain.StaffMember
 import com.iar.tardypass.domain.Student
@@ -341,6 +342,58 @@ class FirestoreSync(
     // ---- Roster -------------------------------------------------------------
 
     /** Pushes an imported roster to Firestore so sibling devices pick it up. */
+    /**
+     * What a "complete roster" import would do, read from Firestore rather than
+     * the Room mirror so the numbers shown to an admin are the real ones.
+     */
+    suspend fun previewFullReplace(fileIds: Set<String>): Result<RosterDiff> {
+        val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
+        return runCatching {
+            val active = school.collection("students")
+                .whereEqualTo("active", true).get().await()
+                .documents.map { it.id }.toSet()
+            RosterDiff(
+                newIds = fileIds - active,
+                updatedIds = fileIds intersect active,
+                deactivateIds = active - fileIds
+            )
+        }
+    }
+
+    /**
+     * Marks students absent from a complete roster inactive. Never deletes —
+     * passes reference studentId and the history has to stay readable.
+     */
+    suspend fun deactivateMissing(fileIds: Set<String>): Result<Int> {
+        val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
+        val firestore = db ?: return Result.failure(IllegalStateException("Sync not configured"))
+        return runCatching {
+            val toDeactivate = school.collection("students")
+                .whereEqualTo("active", true).get().await()
+                .documents.map { it.id }.filterNot { it in fileIds }
+
+            toDeactivate.chunked(400).forEach { chunk ->
+                val batch = firestore.batch()
+                chunk.forEach { id ->
+                    batch.set(
+                        school.collection("students").document(id),
+                        hashMapOf(
+                            "active" to false,
+                            "deactivatedAt" to FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        ),
+                        // set(merge), not update(): update() on a doc removed
+                        // between the read and the write fails the whole batch of
+                        // 400 after the upserts have already committed.
+                        com.google.firebase.firestore.SetOptions.merge()
+                    )
+                }
+                batch.commit().await()
+            }
+            toDeactivate.size
+        }.onFailure { e -> _status.value = _status.value.copy(lastError = e.message) }
+    }
+
     suspend fun pushRoster(students: List<Student>): Result<Int> {
         val school = schoolDoc() ?: return Result.failure(IllegalStateException("Sync not configured"))
         val firestore = db ?: return Result.failure(IllegalStateException("Sync not configured"))
@@ -364,7 +417,15 @@ class FirestoreSync(
                             "updatedAt" to FieldValue.serverTimestamp(),
                             "source" to "csv"
                         ),
-                        com.google.firebase.firestore.SetOptions.merge()
+                        // mergeFields, not merge(): a plain merge DEEP-merges map
+                        // fields, so a student who drops a class would keep the
+                        // stale period in their schedule forever. Listing the
+                        // fields replaces each one wholesale while leaving any
+                        // server-only field (e.g. psDcid) untouched.
+                        com.google.firebase.firestore.SetOptions.mergeFields(
+                            "firstName", "lastName", "grade", "schedule",
+                            "active", "updatedAt", "source"
+                        )
                     )
                 }
                 batch.commit().await()
@@ -396,16 +457,18 @@ class FirestoreSync(
                     return@addSnapshotListener
                 }
                 val now = System.currentTimeMillis()
-                // An empty collection is a healthy state (no roster imported yet),
-                // so report the connection as live before bailing out of the upsert.
-                if (snapshot == null || snapshot.isEmpty) {
-                    _status.value = _status.value.copy(
-                        rosterListening = true,
-                        lastRosterSyncMillis = now,
-                        lastError = null
-                    )
-                    return@addSnapshotListener
-                }
+                if (snapshot == null) return@addSnapshotListener
+
+                // An emptied roster must reach the reconciler, so there is
+                // deliberately no early return on isEmpty here — that bug left a
+                // stale local roster behind forever.
+                //
+                // Only a server-confirmed snapshot may prune. A cache-only
+                // snapshot (cold start offline, or right after "clear app data")
+                // is empty through no fault of the server, and pruning on it
+                // would wipe the local roster.
+                val authoritative = !snapshot.metadata.isFromCache
+
                 val entities = snapshot.documents.mapNotNull { doc ->
                     val first = doc.getString("firstName") ?: return@mapNotNull null
                     val last = doc.getString("lastName") ?: return@mapNotNull null
@@ -433,12 +496,16 @@ class FirestoreSync(
                     pendingWrites = snapshot.metadata.hasPendingWrites(),
                     lastError = null
                 )
-                onRosterSnapshot?.invoke(entities)
+                onRosterSnapshot?.invoke(entities, now, authoritative)
             }
     }
 
-    /** Set by the repository layer, which owns the coroutine scope for DB writes. */
-    var onRosterSnapshot: ((List<StudentEntity>) -> Unit)? = null
+    /**
+     * Set by the repository layer, which owns the coroutine scope for DB writes.
+     * `syncedAt` stamps this batch; `authoritative` is false for a cache-only
+     * snapshot, which must never prune.
+     */
+    var onRosterSnapshot: ((List<StudentEntity>, Long, Boolean) -> Unit)? = null
 
     /** Re-subscribes after a failure (e.g. permissions fixed server-side). */
     fun retryRosterListener() {

@@ -78,6 +78,26 @@ data class StaffMember(
     val initials: String get() = initialsFrom(name)
 }
 
+/** What a complete-roster import would change. Counts shown before confirming. */
+data class RosterDiff(
+    val newIds: Set<String> = emptySet(),
+    val updatedIds: Set<String> = emptySet(),
+    val deactivateIds: Set<String> = emptySet()
+) {
+    val activeBefore: Int get() = updatedIds.size + deactivateIds.size
+
+    /**
+     * Share of the current roster this would deactivate. A high value is the
+     * signature of someone uploading a partial export by mistake.
+     */
+    val deactivateShare: Double
+        get() = if (activeBefore == 0) 0.0 else deactivateIds.size.toDouble() / activeBefore
+
+    /** Guard threshold; the floor keeps a small test roster from tripping it. */
+    fun looksLikePartialFile(threshold: Double = 0.40, floor: Int = 10): Boolean =
+        activeBefore >= floor && deactivateShare > threshold
+}
+
 /** A staff member invited by email who hasn't signed in yet. */
 data class Invite(
     val email: String,
