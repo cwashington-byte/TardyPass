@@ -175,9 +175,11 @@ fun HomeScreen(vm: HomeViewModel) {
                     initials = state.initials,
                     printing = state.printing,
                     hideReason = state.hideReason,
-                    // The picked person's initials already show in the bar above;
-                    // a second editable copy of the same fact is a footgun.
-                    hideInitials = state.deviceMode && state.selectedStaff != null,
+                    // Nothing to type whenever a name already identifies the issuer:
+                    // the picked person on a printer, or the signed-in account.
+                    // The field is only for a device with no account at all.
+                    hideInitials = (state.deviceMode && state.selectedStaff != null) ||
+                        (!state.deviceMode && state.accountInitials != null),
                     onInitials = vm::onInitialsChange,
                     onPeriod = vm::onPeriodChange,
                     onReason = vm::onReasonChange,

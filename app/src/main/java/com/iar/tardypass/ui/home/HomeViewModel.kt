@@ -64,7 +64,12 @@ data class HomeUiState(
     /** A print interrupted to ask who is issuing it; resumes once they choose. */
     val pendingPrintExcused: Boolean? = null,
     /** Bumped after a print to send focus back to the search field for the next student. */
-    val focusSearchTick: Int = 0
+    val focusSearchTick: Int = 0,
+    /**
+     * Initials derived from the signed-in account's name. When present there is
+     * nothing to type — the account already says who this is.
+     */
+    val accountInitials: String? = null
 )
 
 /** Who is currently claiming passes on a shared printer. */
@@ -142,6 +147,15 @@ class HomeViewModel(
         viewModelScope.launch {
             students.activeCount.collect { c ->
                 _state.value = _state.value.copy(rosterCount = c)
+            }
+        }
+        viewModelScope.launch {
+            (auth?.currentUser ?: flowOf(null)).collect { user ->
+                _state.value = _state.value.copy(
+                    accountInitials = user?.displayName
+                        ?.let { initialsFrom(it) }
+                        ?.takeIf { it.isNotBlank() }
+                )
             }
         }
     }
@@ -277,6 +291,12 @@ class HomeViewModel(
                 else -> form.reason
             }
 
+            // Picked staff on a shared printer, else the signed-in account's own
+            // name, else typed initials — only reachable when nobody is signed in.
+            val effectiveInitials = selected?.initials
+                ?: _state.value.accountInitials
+                ?: st.initials.trim().ifEmpty { null }
+
             val receipt = PassReceipt(
                 title = cfg.passTitle,
                 name = form.student.fullName,
@@ -289,7 +309,7 @@ class HomeViewModel(
                 reason = reason,
                 // On a shared printer the picked person's initials are authoritative;
                 // the typed field is only a fallback for unsynced devices.
-                staff = selected?.initials ?: st.initials.trim().ifEmpty { null },
+                staff = effectiveInitials,
                 status = if (excused) "Excused" else "Unexcused"
             )
             val job = EscPos.buildReceipt(receipt, cfg.encoding, cfg.selectCodePage)
@@ -313,7 +333,7 @@ class HomeViewModel(
                         course = entry?.course ?: "",
                         room = entry?.room ?: "",
                         reason = reason,
-                        staffInitials = selected?.initials ?: st.initials.trim().ifEmpty { null },
+                        staffInitials = effectiveInitials,
                         staffUid = attributedUid,
                         staffName = attributedName,
                         excused = excused,
