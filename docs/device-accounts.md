@@ -19,8 +19,9 @@ Read this before telling staff their name is on a pass.
 
 - Which physical printer created the pass (`deviceUid` must equal the caller's own
   uid — a printer cannot claim to be a different printer).
-- That the named author was a provisioned member of this school at the moment of
-  the write.
+- For a picked name, that the author was on this school's staff list at the moment
+  of the write. A **typed** name proves nothing beyond having been typed, which is
+  why it's marked as typed everywhere it appears.
 - That the record has not been edited since (`allow update: if false`).
 - A server-side upper bound on when it arrived (`createdAt`).
 
@@ -189,6 +190,12 @@ Three things that will bite if ignored:
   which build a printer is running, and the automated update channel below has
   nothing to compare against.
 
+To check what a printer is running without a laptop, scroll to the bottom of
+**Settings** — the version and build number are printed there. That's the quick way
+to answer "did that one actually get updated?" while standing in the hallway. From
+a laptop, `adb shell dumpsys package com.iar.tardypass | grep version` says the
+same thing.
+
 **The automated path, when it's wanted:** the APK goes to Cloud Storage rather
 than Hosting — Hosting serves everything publicly, whereas a Storage rule can
 require a `members/{uid}` document, so only a provisioned device can download it.
@@ -222,8 +229,10 @@ the network), but it can no longer read the roster or sync anything.
   window, so a staff member working a rush is never interrupted.
 - Expiry is computed from a stored timestamp, not a running timer, so it survives
   the app being killed and reboots.
-- If the staff list can't be loaded, the picker says so and falls back to typed
-  initials — the pass is then recorded on the device only.
+- Anyone not on the staff list types their name in the same field they'd filter
+  with, and an option appears to use it as typed. Subs need no setup.
+- If the staff list can't be loaded at all, the picker says so and the typed-name
+  path still works, so a printer is never a dead end.
 
 ## Two separate lists
 
@@ -241,6 +250,24 @@ needs a real Workspace account.
 A teacher who only ever issues passes on a hallway printer needs **no account at
 all**. Add them to the staff list and you're done.
 
+### Someone who isn't on either list
+
+A substitute, or a teacher who has never issued a pass before, can type their name
+straight into the picker and use it. Nothing is blocked and no admin is needed.
+
+Such a pass records the name but **no staff id**, and is shown as *"Dana
+Substitute (typed)"* everywhere — the app, the dashboard, and exports. That mark
+is the point of the design. A picked name is a stable identity that reports can
+group by; a typed one is just a string, and might be a misspelling of someone real.
+Keeping them visibly separate means a typo can never quietly merge into a real
+person's totals.
+
+Typed names are deliberately **not** added to the staff list. Someone covering a
+class for a day shouldn't permanently join the picker on every printer, and if
+printers could append to that list, every typo would be permanent. If a typed name
+keeps appearing on the dashboard, that's the signal for an admin to add them
+properly under Settings → Administration → Staff list.
+
 Why the split: attribution from a shared printer is claimed rather than proven no
 matter what, so requiring a Google account per teacher would have bought nothing
 while adding an account and a sign-in step per person.
@@ -251,11 +278,13 @@ while adding an account and a sign-in step per person.
 |---|---|---|---|---|
 | `admin` | read + import | own only, proven | yes | yes, with upload |
 | `staff` | read | own only, proven | no | yes |
-| `device` | read | anyone on the staff list, claimed | no | blocked |
+| `device` | read | anyone on the staff list, or a typed name; claimed | no | blocked |
 
 A device can never be an admin — role is a single string, and member documents are
 admin-writable only, so a printer can't promote itself.
 
-The two attribution fields on a pass are mutually exclusive, and the rules enforce
-it: `staffUid` means an account proved the author's identity; `staffId` means a
-name was picked off the staff list. A device pass may never carry `staffUid`.
+The attribution fields on a pass are mutually exclusive, and the rules enforce it:
+`staffUid` means an account proved the author's identity; `staffId` means a name
+was picked off the staff list. A device pass may never carry `staffUid`. A device
+pass with `staffName` but no `staffId` was typed by hand — allowed, and marked as
+such wherever it's displayed.

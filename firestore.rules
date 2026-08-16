@@ -80,19 +80,29 @@ service cloud.firestore {
         return /databases/$(database)/documents/schools/$(schoolId)/staff/$(staffId);
       }
 
-      // A printer stamps its own uid as the issuing machine and names someone
-      // from the admin-managed staff list as the claimed author. It must NOT
-      // carry a staffUid: that field means "a real account proved this was
-      // them", which is exactly the guarantee a shared printer cannot make.
+      // A printer stamps its own uid as the issuing machine and names the claimed
+      // author. It must NOT carry a staffUid: that field means "a real account
+      // proved this was them", which is exactly the guarantee a shared printer
+      // cannot make.
+      //
+      // Two shapes are allowed. Picked off the staff list, it carries a staffId
+      // pointing at a real entry. Typed by hand — a substitute, or a teacher who
+      // never normally issues passes — it carries only a name. Keeping those
+      // distinguishable is the point: a typo can never merge into a real
+      // person's totals, because only the first shape has an id to group by.
       function deviceAttributedPass(schoolId) {
         return request.resource.data.deviceUid == request.auth.uid
-               && request.resource.data.staffId is string
-               && request.resource.data.staffId.size() > 0
                && request.resource.data.staffName is string
                && request.resource.data.staffName.size() > 0
-               && exists(staffPath(schoolId, request.resource.data.staffId))
                && (!('staffUid' in request.resource.data)
-                   || request.resource.data.staffUid == null);
+                   || request.resource.data.staffUid == null)
+               && (
+                    (request.resource.data.staffId is string
+                     && request.resource.data.staffId.size() > 0
+                     && exists(staffPath(schoolId, request.resource.data.staffId)))
+                    || !('staffId' in request.resource.data)
+                    || request.resource.data.staffId == null
+                  );
       }
 
       match /members/{uid} {

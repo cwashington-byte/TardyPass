@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.iar.tardypass.domain.StaffMember
+import com.iar.tardypass.domain.initialsFrom
 import com.iar.tardypass.ui.theme.Red600
 
 /**
@@ -76,7 +77,7 @@ fun StaffBar(
                 InitialsBadge(selected.initials)
                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text(
-                        "Issuing as",
+                        if (selected.isAdHoc) "Issuing as (typed name)" else "Issuing as",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
@@ -115,6 +116,7 @@ fun StaffPickerSheet(
     choices: List<StaffMember>,
     hasSelection: Boolean,
     onSelect: (StaffMember) -> Unit,
+    onTypeName: (String) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -127,24 +129,27 @@ fun StaffPickerSheet(
 
             if (choices.isEmpty()) {
                 Text(
-                    "No staff list yet. An administrator adds names under " +
-                        "Settings → Administration → Staff list. Until then you can type " +
-                        "initials on the pass, which saves it on this device only.",
+                    "No staff list loaded. An administrator adds names under " +
+                        "Settings → Administration → Staff list. You can still type a " +
+                        "name below and the pass will record it as typed.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     modifier = Modifier.padding(vertical = 16.dp)
                 )
-                TextButton(onClick = onDismiss) { Text("Close") }
-                return@Column
             }
 
+            // One field, two jobs: it filters the list, and whatever doesn't match
+            // anyone can be used as a typed name. A separate "someone else" mode
+            // would make the common case pay for the rare one.
             OutlinedTextField(
                 value = filter,
                 onValueChange = { filter = it },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                label = { Text("Type a few letters") },
+                label = { Text(if (choices.isEmpty()) "Type your name" else "Type a name") },
                 singleLine = true
             )
+
+            TypedNameOption(typed = filter, choices = choices, onUse = onTypeName)
 
             if (hasSelection) {
                 Text(
@@ -183,15 +188,62 @@ fun StaffPickerSheet(
                         )
                     }
                 }
-                if (visible.isEmpty()) {
+                if (visible.isEmpty() && choices.isNotEmpty()) {
                     item {
                         Text(
-                            "No one matches \"$filter\".",
+                            "No one on the staff list matches \"$filter\".",
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             modifier = Modifier.padding(vertical = 16.dp)
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Offered when what's been typed isn't already a name on the list — a substitute,
+ * or a teacher who never normally issues passes.
+ *
+ * Deliberately not added to the staff list: someone covering for a day shouldn't
+ * permanently join the picker, and letting any printer append to that list would
+ * make every typo permanent. The pass records the name with no staff id, which is
+ * what keeps a typo from merging into a real person's totals later.
+ */
+@Composable
+private fun TypedNameOption(
+    typed: String,
+    choices: List<StaffMember>,
+    onUse: (String) -> Unit
+) {
+    val clean = typed.trim()
+    // Two characters is enough to be deliberate; an exact match means the list
+    // already has them, so offering a duplicate would only lose the linkage.
+    if (clean.length < 2) return
+    if (choices.any { it.name.equals(clean, ignoreCase = true) }) return
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onUse(clean) }
+            .padding(bottom = 6.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+        )
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            InitialsBadge(initialsFrom(clean))
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text("Use \"$clean\"", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Not on the staff list — recorded as typed",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
             }
         }
     }

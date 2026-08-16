@@ -74,9 +74,17 @@ data class HomeUiState(
     val bell: BellSchedule = BellSchedule.EMPTY
 )
 
-/** Who is currently claiming passes on a shared printer. */
+/**
+ * Who is currently claiming passes on a shared printer.
+ *
+ * A blank [id] means the name was typed by hand — a substitute, or someone who
+ * doesn't normally issue passes. Those stay distinguishable from a picked name
+ * all the way into Firestore, so a typo can never merge into a real person's
+ * totals.
+ */
 data class SelectedStaff(val id: String, val name: String) {
     val initials: String get() = initialsFrom(name)
+    val isAdHoc: Boolean get() = id.isBlank()
 }
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -114,7 +122,9 @@ class HomeViewModel(
                         hideReason = cfg.hideReason,
                         deviceMode = effectiveRole == "device",
                         bell = BellSchedule.fromJson(cfg.bellScheduleJson),
-                        selectedStaff = if (expired || cfg.selectedStaffUid.isEmpty()) null
+                        // Keyed on the NAME, not the id: an ad-hoc selection has
+                        // a blank id and must still survive a restart.
+                        selectedStaff = if (expired || cfg.selectedStaffName.isEmpty()) null
                         else SelectedStaff(cfg.selectedStaffUid, cfg.selectedStaffName)
                     )
                 }
@@ -190,15 +200,28 @@ class HomeViewModel(
         _state.value = _state.value.copy(staffPickerOpen = false, pendingPrintExcused = null)
     }
 
-    fun onStaffSelected(member: StaffMember) {
+    fun onStaffSelected(member: StaffMember) = selectStaff(member.id, member.name)
+
+    /** Free-text fallback for a name that isn't on the admin-managed list. */
+    fun onStaffTyped(name: String) {
+        val clean = name.trim()
+        if (clean.isEmpty()) return
+        // If it happens to match a real entry, prefer that — it keeps the id and
+        // the reporting linkage rather than creating a lookalike.
+        val match = _state.value.staffChoices
+            .firstOrNull { it.name.equals(clean, ignoreCase = true) }
+        selectStaff(match?.id ?: "", match?.name ?: clean)
+    }
+
+    private fun selectStaff(id: String, name: String) {
         val resume = _state.value.pendingPrintExcused
         _state.value = _state.value.copy(
-            selectedStaff = SelectedStaff(member.id, member.name),
+            selectedStaff = SelectedStaff(id, name),
             staffPickerOpen = false,
             pendingPrintExcused = null
         )
         viewModelScope.launch {
-            settings.setSelectedStaff(member.id, member.name)
+            settings.setSelectedStaff(id, name)
             // The press that opened the picker continues on its own.
             if (resume != null) doPrint(resume, skipDuplicateCheck = true)
         }
@@ -319,7 +342,7 @@ class HomeViewModel(
             // staffUid stays null because nothing proved who it was. A personal
             // account keeps the proven staffUid.
             val attributedUid = if (deviceMode) null else account?.uid
-            val attributedStaffId = if (deviceMode) selected?.id else null
+            val attributedStaffId = if (deviceMode) selected?.id?.takeIf { it.isNotBlank() } else null
             val attributedName = if (deviceMode) selected?.name else account?.displayName
 
             // Built before printing so the slip and the recorded row are composed
@@ -363,7 +386,7 @@ class HomeViewModel(
                     // Skipped when we have no attribution — the rules would reject
                     // it anyway, and a failed write just shows a red banner.
                     val canSync = account != null &&
-                        (if (deviceMode) attributedStaffId != null else attributedUid != null)
+                        (if (deviceMode) attributedName != null else attributedUid != null)
                     if (canSync) {
                         sync?.recordPass(
                             pass, attributedUid, attributedName, form.student.grade,

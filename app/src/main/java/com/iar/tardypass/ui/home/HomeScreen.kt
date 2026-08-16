@@ -101,6 +101,7 @@ fun HomeScreen(vm: HomeViewModel) {
             choices = state.staffChoices,
             hasSelection = state.selectedStaff != null,
             onSelect = { dismissKeyboard(); vm.onStaffSelected(it) },
+            onTypeName = { dismissKeyboard(); vm.onStaffTyped(it) },
             onClear = vm::clearSelectedStaff,
             onDismiss = vm::dismissStaffPicker
         )

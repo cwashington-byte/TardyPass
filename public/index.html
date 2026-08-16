@@ -392,7 +392,12 @@ function subscribe() {
         period: v.period || "",
         reason: v.reason || "",
         excused: !!v.excused,
-        staff: v.staffName || v.staffInitials || "",
+        // A printer pass carrying a name but no staff id was typed by hand — a
+        // sub, or someone not on the staff list. Marked everywhere the name is
+        // shown, including exports, so an ad-hoc spelling is never mistaken for
+        // the roster entry it resembles.
+        staff: (v.staffName || v.staffInitials || "") +
+               ((v.deviceUid && v.staffName && !v.staffId) ? " (typed)" : ""),
         device: v.deviceName || "",
         late: (v.minutesLate ?? "") === "" ? "" : String(v.minutesLate)
       };

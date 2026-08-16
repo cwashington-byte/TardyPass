@@ -125,7 +125,7 @@ class SettingsRepository(private val context: Context) {
 
     /** Extends the idle window after activity, without changing who is selected. */
     suspend fun touchSelectedStaff() = context.dataStore.edit {
-        if (!it[Keys.SELECTED_STAFF_UID].isNullOrEmpty()) {
+        if (!it[Keys.SELECTED_STAFF_NAME].isNullOrEmpty()) {
             it[Keys.SELECTED_STAFF_AT] = System.currentTimeMillis()
         }
     }
