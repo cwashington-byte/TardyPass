@@ -1,5 +1,7 @@
 package com.iar.tardypass.ui.admin
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,13 +11,19 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -67,6 +75,10 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
     val busy by vm.busy.collectAsState()
 
     val staffList by vm.staffList.collectAsState()
+    // Collapsed by default: a school's staff list runs to dozens of names, and
+    // left open it buries Accounts and everything under it. Adding a name is the
+    // common task and stays one tap; finding one to remove is the rare one.
+    var staffExpanded by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var staffName by remember { mutableStateOf("") }
     var role by remember { mutableStateOf("staff") }
@@ -156,13 +168,35 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
         item(key = "stafflist") {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Staff list", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { staffExpanded = !staffExpanded },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Staff list", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "${staffList.size} ${if (staffList.size == 1) "person" else "people"}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = if (staffExpanded) Icons.Filled.ExpandLess
+                            else Icons.Filled.ExpandMore,
+                            contentDescription = if (staffExpanded) "Hide staff list"
+                            else "Show staff list"
+                        )
+                    }
                     Text(
                         "Everyone who can be credited on a pass. No Google account or " +
                             "sign-in needed — these names appear in the picker on shared printers.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
+                    // Deliberately outside the collapsed region: adding someone is
+                    // what an admin opens this screen to do.
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -180,26 +214,43 @@ fun AdminScreen(vm: AdminViewModel, schoolDomain: String, onBack: () -> Unit) {
                             modifier = Modifier.height(56.dp)
                         ) { Text("Add") }
                     }
-                }
-            }
-        }
-
-        items(staffList, key = { "staff-${it.id}" }) { person ->
-            Card(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        person.initials.ifEmpty { "?" },
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 12.dp)
-                    )
-                    Text(person.name, Modifier.weight(1f))
-                    TextButton(onClick = { pendingStaffRemoval = person }) {
-                        Text("Remove", color = Red600)
+                    AnimatedVisibility(visible = staffExpanded) {
+                        Column {
+                            if (staffList.isEmpty()) {
+                                Text(
+                                    "No one added yet. Staff can still type their name on a " +
+                                        "printer, so this being empty is never a dead end.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                            // Divided rows rather than a card each: at forty names the
+                            // per-card padding and gaps cost more height than the names.
+                            staffList.forEachIndexed { i, person ->
+                                if (i > 0) HorizontalDivider()
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Fixed width, not padding: initials are
+                                    // proportional, so without it every name starts
+                                    // at a different x and the column reads ragged.
+                                    Text(
+                                        person.initials.ifEmpty { "?" },
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier
+                                            .width(44.dp)
+                                            .padding(end = 12.dp)
+                                    )
+                                    Text(person.name, Modifier.weight(1f))
+                                    TextButton(onClick = { pendingStaffRemoval = person }) {
+                                        Text("Remove", color = Red600)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -36,6 +36,30 @@ Still to do:
   Kotlin and JS implementations; a shared fixture set of sample exports that both
   are tested against would stop them drifting.
 
+### Pass data worth looking at
+
+Every pass already records student, reason, period, staff, excused/unexcused and
+two timestamps, and almost none of it is ever read back. The only aggregate the
+app shows is the per-student count on the pass form, which answers exactly one
+question — "is this student a repeat?" — and answers it only to whoever happens
+to be printing.
+
+Worth building, roughly in the order people ask for it:
+
+- **Students ranked by pass count** over a chosen date range, so "who are our
+  twenty worst?" is a screen rather than an export and a spreadsheet.
+- **Breakdown by reason and by period.** Whether tardies cluster in first period
+  or after lunch changes what the school does about them.
+- **Excused vs unexcused split**, per student and school-wide.
+- **Trend over time**, so an intervention can be shown to have worked or not.
+
+This belongs on the dashboard, not the printers. It's a sit-down question best
+answered on a real screen, and a printer deliberately holds only its own local
+history — no single device has the data to answer any of it.
+
+The repeat-tardy threshold alert below is the narrow, in-the-moment version of
+the same idea; this is the version someone reads at a desk.
+
 ### Other Phase 3 items
 
 - ~~Reprint from the log (paper jams).~~ **Done.**

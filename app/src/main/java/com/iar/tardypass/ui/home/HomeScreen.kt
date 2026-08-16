@@ -235,7 +235,10 @@ private fun PassFormCard(
     onClose: () -> Unit
 ) {
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // 6dp rather than the 10dp used elsewhere: this card is the one thing on
+        // the screen that has to fit whole, and the gaps between the student, the
+        // two reason rows and the print buttons were the cheapest space to buy.
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(form.student.fullName, style = MaterialTheme.typography.titleMedium)
