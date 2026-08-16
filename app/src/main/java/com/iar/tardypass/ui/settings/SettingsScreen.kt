@@ -37,10 +37,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.iar.tardypass.printing.PrinterEncoding
 import com.iar.tardypass.ui.auth.AuthViewModel
 import com.iar.tardypass.ui.components.ChoiceChip
+import com.iar.tardypass.ui.theme.Green600
+import com.iar.tardypass.ui.theme.Red600
 
 @Composable
 fun SettingsScreen(
@@ -52,6 +55,7 @@ fun SettingsScreen(
 ) {
     val settings by vm.settings.collectAsState()
     val availability by vm.availability.collectAsState()
+    val printerStatus by vm.printerStatus.collectAsState()
     val testResult by vm.testResult.collectAsState()
     val role = authVm?.memberRole?.collectAsState()?.value
     val signedIn = authVm?.state?.collectAsState()?.value?.user != null
@@ -126,7 +130,20 @@ fun SettingsScreen(
             }
         }
 
-        CollapsibleCard("Printer") {
+        CollapsibleCard(
+            "Printer",
+            headerAccessory = {
+                Text("●", color = if (printerStatus.activeDriverId != null) Green600 else Red600)
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    printerStatus.activeDriverName,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        ) {
             vm.driverChoices.forEach { (id, name) ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     ChoiceChip(
@@ -273,6 +290,8 @@ fun SettingsScreen(
 private fun CollapsibleCard(
     title: String,
     initiallyExpanded: Boolean = false,
+    /** Shown right-aligned in the header, so it reads while the card is collapsed. */
+    headerAccessory: (@Composable () -> Unit)? = null,
     content: @Composable () -> Unit
 ) {
     var expanded by remember { mutableStateOf(initiallyExpanded) }
@@ -284,7 +303,12 @@ private fun CollapsibleCard(
                     .clickable { expanded = !expanded },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+                headerAccessory?.let {
+                    it()
+                    Spacer(Modifier.width(8.dp))
+                }
                 Icon(
                     imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                     contentDescription = if (expanded) "Collapse $title" else "Expand $title"

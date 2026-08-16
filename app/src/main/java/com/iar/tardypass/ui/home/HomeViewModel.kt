@@ -102,8 +102,6 @@ class HomeViewModel(
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state
 
-    val printerStatus = printer.status
-
     private val queryFlow = MutableStateFlow("")
 
     init {

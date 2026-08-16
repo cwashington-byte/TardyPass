@@ -5,7 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,7 +54,6 @@ import java.util.Locale
 @Composable
 fun HomeScreen(vm: HomeViewModel) {
     val state by vm.state.collectAsState()
-    val printerStatus by vm.printerStatus.collectAsState()
 
     // Once a student is picked the keyboard is just covering the pass form, so
     // drop focus to dismiss it. Tapping the search field again refocuses and
@@ -112,21 +110,10 @@ fun HomeScreen(vm: HomeViewModel) {
         contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item(key = "printer-chip") {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val color = if (printerStatus.activeDriverId != null) Green600 else Red600
-                Text("●", color = color)
-                Spacer(Modifier.width(6.dp))
-                Text(printerStatus.activeDriverName, style = MaterialTheme.typography.labelMedium)
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "${state.rosterCount} students",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-            }
-        }
-
+        // Printer status and roster count live in Settings: on a 720px handheld
+        // the pass form is what the screen is for, and both are answers to
+        // setup-time questions. A printer that stops working still announces
+        // itself where it matters — the banner on a failed print.
         if (state.deviceMode) {
             item(key = "staff-bar") {
                 StaffBar(

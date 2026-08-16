@@ -21,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.iar.tardypass.domain.StaffMember
 import com.iar.tardypass.domain.initialsFrom
@@ -57,7 +57,12 @@ fun StaffBar(
         )
     ) {
         Row(
-            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            Modifier.padding(
+                horizontal = 14.dp,
+                // The unselected state carries two lines and has to be loud; the
+                // selected one is a single line and can sit tight.
+                vertical = if (selected == null) 8.dp else 6.dp
+            ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (selected == null) {
@@ -75,15 +80,30 @@ fun StaffBar(
                 }
             } else {
                 InitialsBadge(selected.initials)
-                Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(
-                        if (selected.isAdHoc) "Issuing as (typed name)" else "Issuing as",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Text(selected.name, fontWeight = FontWeight.SemiBold)
-                }
-                TextButton(onClick = onClick) { Text("Change") }
+                Text(
+                    "Issuing as",
+                    modifier = Modifier.padding(start = 10.dp, end = 6.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                // A typed name is never allowed to look like a picked one — see
+                // docs/device-accounts.md. Marked inline now that the label and
+                // the name share a line.
+                Text(
+                    selected.name + if (selected.isAdHoc) " (typed)" else "",
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                // Plain text, not a TextButton: the whole card is already the tap
+                // target, and a button's 40dp minimum was setting the bar's height.
+                Text(
+                    "Change",
+                    modifier = Modifier.padding(start = 8.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
@@ -93,7 +113,7 @@ fun StaffBar(
 private fun InitialsBadge(initials: String) {
     Box(
         Modifier
-            .size(40.dp)
+            .size(32.dp)
             .background(MaterialTheme.colorScheme.primary, CircleShape),
         contentAlignment = Alignment.Center
     ) {

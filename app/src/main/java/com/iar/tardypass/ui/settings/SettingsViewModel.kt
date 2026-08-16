@@ -26,6 +26,9 @@ class SettingsViewModel(
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppSettings())
 
+    /** Which driver actually won the probe — the at-a-glance dot in the Printer card. */
+    val printerStatus = printer.status
+
     val availability = MutableStateFlow<Map<String, Boolean>>(emptyMap())
     val testResult = MutableStateFlow<String?>(null)
 
