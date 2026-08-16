@@ -1,0 +1,6 @@
+# The Gradle wrapper is three files with three different rules: gradlew is a
+# POSIX shell script and breaks if it ever picks up CRLF, gradlew.bat is a
+# Windows batch file, and the jar must never be line-ending converted at all.
+gradlew        text eol=lf
+gradlew.bat    text eol=crlf
+*.jar          binary
