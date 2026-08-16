@@ -102,9 +102,13 @@ somewhere you're signed in as an admin — an existing printer, or the app on yo
 own phone. Settings → Administration → Manage staff → enter the new printer's
 address (`passprinter02@…`), choose **Device**, Grant access.
 
-*(If this is the very first device and there's nowhere to do that from, create the
-member document by hand in the Firebase console — see the bootstrap note at the
-top of this file.)*
+*(If this is the very first device and there's nowhere to do that from, create an
+**invite** by hand in the Firebase console instead: a document under
+`/schools/{id}/invites/` whose id is the lowercased email address, with a `role`
+field of `admin`. Then sign in on the dashboard and it provisions itself. This is
+easier than writing the member document directly, because a member document is
+keyed by Firebase uid — which you can't know until that account has already
+signed in — whereas an invite is keyed by the email address you already have.)*
 
 ### 2. Create the Workspace account
 
@@ -236,6 +240,29 @@ the network), but it can no longer read the roster or sync anything.
   with, and an option appears to use it as typed. Subs need no setup.
 - If the staff list can't be loaded at all, the picker says so and the typed-name
   path still works, so a printer is never a dead end.
+
+## Claiming access without touching a printer
+
+A person who has been granted access can complete their first sign-in **on the
+dashboard**, in any browser. The page turns their pending invite into a member
+document the moment they sign in, exactly as the app does.
+
+This matters because Google Sign-In on Android reads *device-level* accounts. A
+new admin or attendance clerk would otherwise have had to add their personal
+Google account to a shared printer, open the app to create one Firestore
+document, and then remove the account again — putting a personal identity on a
+hallway device for no reason other than provisioning.
+
+Two limits worth knowing:
+
+- **Granting** access still happens in the app, under Settings → Administration →
+  Manage staff. The dashboard can claim an invite but cannot create one.
+- **Printer accounts still sign in on the printer.** Claiming in a browser writes
+  the member document but does not put the account on the H10, and the app reads
+  the device account. Nothing about the printer runbook above changes.
+
+Anyone signing in with no invite waiting sees the same "no access" panel as
+before.
 
 ## Two separate lists
 

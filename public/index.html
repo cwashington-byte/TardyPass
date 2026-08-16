@@ -243,7 +243,8 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
-  getFirestore, collection, query, where, orderBy, limit, onSnapshot, doc, getDoc
+  getFirestore, collection, query, where, orderBy, limit, onSnapshot, doc, getDoc,
+  setDoc, deleteDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 // Firebase web config is public by design — it identifies the project, it does
@@ -300,6 +301,51 @@ $("signIn").onclick = async () => {
 
 $("signOut").onclick = () => signOut(auth);
 
+/**
+ * Turns a pending invite into this user's own member document.
+ *
+ * Mirrors claimInviteIfPresent() in the Android app. Until now that code existed
+ * only there, so an invited person had to do their very first sign-in on a
+ * printer — adding a personal Google account to a shared device just to create
+ * one Firestore document, then removing it again.
+ *
+ * The security rules never required that. firestore.rules allows any signed-in
+ * user to create members/{their own uid} when an invite exists for their email,
+ * and only with the role the admin chose, so this cannot be self-escalated to
+ * admin. The rules also let an invitee read and delete their own invite. Those
+ * are the only three operations here, and they don't care whether the caller is
+ * the Android SDK or the browser.
+ *
+ * Returns the granted role, or null if there was no invite to claim.
+ */
+async function claimInvite(user) {
+  const key = (user.email || "").trim().toLowerCase();
+  if (!key) return null;
+  try {
+    const invite = await getDoc(doc(db, "schools", SCHOOL_ID, "invites", key));
+    if (!invite.exists()) return null;
+
+    const role = invite.data().role || "staff";
+    await setDoc(doc(db, "schools", SCHOOL_ID, "members", user.uid), {
+      role,
+      email: user.email,
+      displayName: user.displayName || "",
+      joinedAt: serverTimestamp()
+    });
+
+    // Tidy up so the admin's pending list reflects reality. Best effort on
+    // purpose: the member document is what grants access and it is already
+    // written, so a failure here must not look like a failed sign-in.
+    try {
+      await deleteDoc(doc(db, "schools", SCHOOL_ID, "invites", key));
+    } catch { /* admin can revoke the stale invite by hand */ }
+
+    return role;
+  } catch {
+    return null;
+  }
+}
+
 onAuthStateChanged(auth, async (user) => {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
 
@@ -326,6 +372,20 @@ onAuthStateChanged(auth, async (user) => {
     isAdmin = snap.exists() && snap.data().role === "admin";
     isDeviceAcct = snap.exists() && snap.data().role === "device";
   } catch { isMember = false; }
+
+  // No member document yet? This may be a first sign-in against a pending
+  // invite. Claiming it here is what lets someone provision themselves from a
+  // browser instead of borrowing a printer. Anyone without an invite falls
+  // through unchanged and still lands on the "no access" panel below.
+  if (!isMember) {
+    const grantedRole = await claimInvite(user);
+    if (grantedRole) {
+      isMember = true;
+      isAdmin = grantedRole === "admin";
+      isDeviceAcct = grantedRole === "device";
+      toast("Access granted — welcome");
+    }
+  }
 
   // A printer account has no business browsing a term of records from a laptop.
   // UI-only — the rules still let that uid read — but it removes the obvious path.
