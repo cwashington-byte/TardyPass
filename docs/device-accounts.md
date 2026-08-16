@@ -224,9 +224,12 @@ the network), but it can no longer read the roster or sync anything.
 - Pressing PRINT with nobody selected opens the picker and **resumes the print
   automatically** once a name is chosen. One extra tap, never a dead end — and
   never a pass silently attributed to the printer.
-- The selection clears after a period of inactivity (default 5 minutes,
-  configurable in Settings → Staff selection, or Off). Each print extends the
-  window, so a staff member working a rush is never interrupted.
+- The selection clears after a period of inactivity — default 10 minutes, with
+  30 minutes, 1 hour, 3 hours or Off available under Settings → Staff selection.
+  Each print extends the window, so a staff member working a rush is never
+  interrupted. A printer still set to one of the old 2- or 5-minute windows is
+  moved up to 10 on first launch, never down to Off: a window that is longer
+  than intended is a smaller problem than one that never clears.
 - Expiry is computed from a stored timestamp, not a running timer, so it survives
   the app being killed and reboots.
 - Anyone not on the staff list types their name in the same field they'd filter

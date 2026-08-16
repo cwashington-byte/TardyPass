@@ -20,6 +20,38 @@ private val Context.dataStore by preferencesDataStore(name = "settings")
  */
 const val DEFAULT_SCHOOL_ID = "invictus"
 
+/**
+ * Inactivity windows offered for clearing the selected staff member, in minutes;
+ * 0 means never clear. Declared here rather than in the settings screen so the
+ * picker and [normalizeStaffTimeout] cannot drift apart.
+ */
+val STAFF_TIMEOUT_CHOICES: List<Pair<Int, String>> = listOf(
+    0 to "Off",
+    10 to "10 min",
+    30 to "30 min",
+    60 to "1 hour",
+    180 to "3 hours"
+)
+
+const val DEFAULT_STAFF_TIMEOUT_MIN = 10
+
+/**
+ * Snaps a stored window onto the current scale, so a printer carrying a value
+ * from an older build still lights exactly one chip in the picker.
+ *
+ * Always rounds **up** to the next offered window, and never down to Off. The
+ * 2- and 5-minute options this replaced were shorter than anything now on
+ * offer, and rounding to the nearest value would map them to Off — silently
+ * disabling clearing on a shared printer and leaving the next person to print
+ * under someone else's name. Lengthening the window is the safe direction to
+ * be wrong in; switching it off is not.
+ */
+fun normalizeStaffTimeout(stored: Int): Int {
+    if (stored <= 0) return 0
+    val windows = STAFF_TIMEOUT_CHOICES.map { it.first }.filter { it > 0 }
+    return windows.firstOrNull { it >= stored } ?: windows.last()
+}
+
 data class AppSettings(
     val printerDriverId: String = "auto",       // auto | vendor | serial | bluetooth | rawbt
     val encoding: PrinterEncoding = PrinterEncoding.CP437,
@@ -36,7 +68,7 @@ data class AppSettings(
     val selectedStaffUid: String = "",
     val selectedStaffName: String = "",
     val selectedStaffAtMillis: Long = 0L,
-    val staffTimeoutMinutes: Int = 5,           // 0 = never clear
+    val staffTimeoutMinutes: Int = DEFAULT_STAFF_TIMEOUT_MIN,   // 0 = never clear
     /** Last role Firestore reported, so a cold start knows the mode immediately. */
     val lastKnownRole: String = "",
     /** Cached copy of the school's bell schedule; printing must not need network. */
@@ -88,7 +120,9 @@ class SettingsRepository(private val context: Context) {
             selectedStaffUid = p[Keys.SELECTED_STAFF_UID] ?: "",
             selectedStaffName = p[Keys.SELECTED_STAFF_NAME] ?: "",
             selectedStaffAtMillis = p[Keys.SELECTED_STAFF_AT] ?: 0L,
-            staffTimeoutMinutes = p[Keys.STAFF_TIMEOUT_MIN] ?: 5,
+            staffTimeoutMinutes = normalizeStaffTimeout(
+                p[Keys.STAFF_TIMEOUT_MIN] ?: DEFAULT_STAFF_TIMEOUT_MIN
+            ),
             lastKnownRole = p[Keys.LAST_KNOWN_ROLE] ?: "",
             bellScheduleJson = p[Keys.BELL_SCHEDULE_JSON] ?: "",
             serialDevicePath = p[Keys.SERIAL_PATH] ?: "",

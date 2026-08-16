@@ -33,8 +33,8 @@ android {
         applicationId = "com.iar.tardypass"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.1.3"
+        versionCode = 6
+        versionName = "1.1.4"
         buildConfigField("boolean", "FIREBASE_CONFIGURED", hasFirebaseConfig.toString())
     }
 

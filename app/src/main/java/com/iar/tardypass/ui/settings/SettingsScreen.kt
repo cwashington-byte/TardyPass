@@ -3,6 +3,8 @@ package com.iar.tardypass.ui.settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,12 +41,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.iar.tardypass.data.repo.STAFF_TIMEOUT_CHOICES
 import com.iar.tardypass.printing.PrinterEncoding
 import com.iar.tardypass.ui.auth.AuthViewModel
 import com.iar.tardypass.ui.components.ChoiceChip
 import com.iar.tardypass.ui.theme.Green600
 import com.iar.tardypass.ui.theme.Red600
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     vm: SettingsViewModel,
@@ -222,15 +226,20 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0 to "Off", 2 to "2 min", 5 to "5 min", 10 to "10 min", 30 to "30 min")
-                        .forEach { (mins, label) ->
-                            ChoiceChip(
-                                selected = settings.staffTimeoutMinutes == mins,
-                                onClick = { vm.setStaffTimeoutMinutes(mins) },
-                                label = label
-                            )
-                        }
+                // FlowRow, not Row: five windows at these labels overrun a 720px
+                // screen, and the old fixed Row simply clipped the last chip off
+                // the edge where nothing revealed it was there.
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    STAFF_TIMEOUT_CHOICES.forEach { (mins, label) ->
+                        ChoiceChip(
+                            selected = settings.staffTimeoutMinutes == mins,
+                            onClick = { vm.setStaffTimeoutMinutes(mins) },
+                            label = label
+                        )
+                    }
                 }
             }
         }
