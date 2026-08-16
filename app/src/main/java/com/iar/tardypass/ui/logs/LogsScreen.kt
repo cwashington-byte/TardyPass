@@ -12,6 +12,8 @@ import com.iar.tardypass.domain.Pass
 import com.iar.tardypass.ui.theme.Amber700
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +48,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LogsScreen(vm: LogsViewModel) {
     val logs by vm.logs.collectAsState()
@@ -136,16 +139,19 @@ fun LogsScreen(vm: LogsViewModel) {
 
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
-        Row(
+        // FlowRow, and no trailing Spacer. As a fixed Row these controls overran a
+        // 720px screen: the weighted spacer collapsed to nothing and "Clear" was
+        // pushed past the right edge, where it could not be tapped at all. Delete
+        // all logs was unreachable on the actual hardware.
+        FlowRow(
             Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             ChoiceChip(selected = todayOnly, onClick = { vm.todayOnly.value = true }, label = "Today")
             ChoiceChip(selected = !todayOnly, onClick = { vm.todayOnly.value = false }, label = "All")
-            Spacer(Modifier.weight(1f))
             if (vm.syncAvailable) {
                 ChoiceChip(
                     selected = logScope == LogScope.SCHOOL,
