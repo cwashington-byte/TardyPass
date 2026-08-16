@@ -23,11 +23,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -314,14 +316,21 @@ private fun PassFormCard(
             }
 
             if (!hideReason) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    REASONS.take(3).forEach { r ->
-                        ChoiceChip(selected = form.reason == r, onClick = { onReason(r) }, label = r)
+                // A chip draws 32dp tall but Material reserves a 48dp touch target
+                // around it, so 8dp of dead space sits above and below every row —
+                // 16dp of each gap here, which no amount of Arrangement.spacedBy can
+                // reach. 40dp is Material's own button minimum: still a comfortable
+                // target for a hallway tap, and it gives the other 8dp per row back.
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 40.dp) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        REASONS.take(3).forEach { r ->
+                            ChoiceChip(selected = form.reason == r, onClick = { onReason(r) }, label = r)
+                        }
                     }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    REASONS.drop(3).forEach { r ->
-                        ChoiceChip(selected = form.reason == r, onClick = { onReason(r) }, label = r)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        REASONS.drop(3).forEach { r ->
+                            ChoiceChip(selected = form.reason == r, onClick = { onReason(r) }, label = r)
+                        }
                     }
                 }
                 if (form.reason == "Other") {
