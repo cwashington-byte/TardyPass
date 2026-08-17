@@ -83,11 +83,27 @@ the same idea; this is the version someone reads at a desk.
   Requires **Blaze**: projects created after October 2024 cannot provision a
   Storage bucket on Spark. Deferred until Blaze is enabled for the SIS sync;
   `adb install -r` is the interim path, documented in `device-accounts.md`.
-- **Custom dashboard domain**: `passes.invictusofrichmond.org`. Free on Hosting,
-  needs DNS records. Worth doing because staff are asked to enter Google
-  credentials there and a project-id `.web.app` URL looks like phishing. The
-  domain must also be added to Firebase Auth's authorized domains or sign-in
-  fails on it.
+- **Custom dashboard domain**: `passes.invictusofrichmond.org` — DNS verified and
+  serving the dashboard. Worth doing because staff are asked to enter Google
+  credentials there and a project-id `.web.app` URL looks like phishing.
+
+  **Sign-in on it is still blocked until the domain is added to Firebase Auth's
+  authorized domains** (Console → Authentication → Settings → Authorized
+  domains). The current list is `localhost`, `tardypass-de47d.firebaseapp.com`
+  and `tardypass-de47d.web.app`, so any sign-in attempt on the custom domain
+  fails with `auth/unauthorized-domain`. This is a console setting: there is no
+  Firebase CLI command for it, and nothing in the page can work around it.
+
+  To check the live list without the console:
+  `https://identitytoolkit.googleapis.com/v1/projects?key={apiKey}` returns
+  `authorizedDomains`.
+
+  Leaving `authDomain` pointed at `tardypass-de47d.firebaseapp.com` is fine and
+  is the smaller change. Repointing it at the custom domain would make the popup
+  same-origin — the custom domain does serve `/__/auth/handler` correctly — but
+  it additionally requires adding `https://passes.invictusofrichmond.org/__/auth/handler`
+  as an authorized redirect URI on the OAuth client in Google Cloud Console.
+  Not worth it unless third-party-cookie restrictions start breaking the popup.
 
 ## Phase 4 — SIS integration
 
